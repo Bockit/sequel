@@ -1,0 +1,106 @@
+{
+  "tools": {
+    "sqlc": {
+      "version": "1.31.1",
+      "executable": "sqlc",
+      "platforms": {
+        "darwin-arm64": {
+          "platform": "darwin_arm64",
+          "asset": "sqlc_1.31.1_darwin_arm64.tar.gz",
+          "archive": "tar.gz",
+          "member": "sqlc",
+          "upstream": "https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_darwin_arm64.tar.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1/sqlc_1.31.1_darwin_arm64.tar.gz",
+          "assetSha256": "21602158c99eb1f2bae197a66abfb1941d1e9e50b23125bb193349c6b1acc71e",
+          "executableSha256": "7e63a8b2166f1103a2ad1d2e5d05d8fe3f13ca65ecf2774a2570b830d32055fd"
+        },
+        "linux-x64": {
+          "platform": "linux_amd64",
+          "asset": "sqlc_1.31.1_linux_amd64.tar.gz",
+          "archive": "tar.gz",
+          "member": "sqlc",
+          "upstream": "https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_linux_amd64.tar.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1/sqlc_1.31.1_linux_amd64.tar.gz",
+          "assetSha256": "497ae4fcdfa64c5b0c311ffe4c2bd991e43991e82e5367792ed78bc2dca27354",
+          "executableSha256": "0496fbc18f603e2fbd10c752942d1389a1fa9bc3d18de7243ec00cccd611575f"
+        },
+        "linux-arm64": {
+          "platform": "linux_arm64",
+          "asset": "sqlc_1.31.1_linux_arm64.tar.gz",
+          "archive": "tar.gz",
+          "member": "sqlc",
+          "upstream": "https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_linux_arm64.tar.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1/sqlc_1.31.1_linux_arm64.tar.gz",
+          "assetSha256": "b7cae247740d0c51a1e657479e5b2d21e6fef428f596682a01bc55bf4ab8a23d",
+          "executableSha256": "3b42bdbc5be1d534b95fc6b9f0e1572e6aa555fda3c96f208cb26abb1bb77d7e"
+        }
+      }
+    },
+    "squawk": {
+      "version": "2.71.0",
+      "executable": "squawk",
+      "platforms": {
+        "darwin-arm64": {
+          "platform": "darwin-arm64",
+          "asset": "squawk-darwin-arm64",
+          "archive": "none",
+          "upstream": "https://github.com/sbdchd/squawk/releases/download/v2.71.0/squawk-darwin-arm64",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-squawk-2.71.0/squawk-darwin-arm64",
+          "assetSha256": "6132cb9779c688303e43746e10268f280b35a3fbcc70b851472021cc882ef5a2",
+          "executableSha256": "6132cb9779c688303e43746e10268f280b35a3fbcc70b851472021cc882ef5a2"
+        },
+        "linux-x64": {
+          "platform": "linux-musl-x64",
+          "asset": "squawk-linux-musl-x64",
+          "archive": "none",
+          "upstream": "https://github.com/sbdchd/squawk/releases/download/v2.71.0/squawk-linux-musl-x64",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-squawk-2.71.0/squawk-linux-musl-x64",
+          "assetSha256": "cf542e159fb3a94e5fd31d8b5282a31334df8205c6d7993afe286e9133fdff3e",
+          "executableSha256": "cf542e159fb3a94e5fd31d8b5282a31334df8205c6d7993afe286e9133fdff3e"
+        },
+        "linux-arm64": {
+          "platform": "linux-musl-arm64",
+          "asset": "squawk-linux-musl-arm64",
+          "archive": "none",
+          "upstream": "https://github.com/sbdchd/squawk/releases/download/v2.71.0/squawk-linux-musl-arm64",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-squawk-2.71.0/squawk-linux-musl-arm64",
+          "assetSha256": "3b350a7ad426cd4f000b9b43211b19d8a724392ad715ad454156653aadf77347",
+          "executableSha256": "3b350a7ad426cd4f000b9b43211b19d8a724392ad715ad454156653aadf77347"
+        }
+      }
+    },
+    "schema-engine": {
+      "version": "8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8",
+      "executable": "schema-engine",
+      "platforms": {
+        "darwin-arm64": {
+          "platform": "darwin-arm64",
+          "asset": "schema-engine-darwin-arm64.gz",
+          "archive": "gz",
+          "upstream": "https://binaries.prisma.sh/all_commits/d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/darwin-arm64/schema-engine.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-schema-engine-8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/schema-engine-darwin-arm64.gz",
+          "assetSha256": "d7e50db1fa19f659dc95050e0e5b23bd3699c5db2f33bd0c43cb3e9bf7df3dc6",
+          "executableSha256": "6032ea1bdbd6dc3d453c36a22838d1d3b3554053083bf7695c104e9993637ba1"
+        },
+        "linux-x64": {
+          "platform": "linux-static-x64",
+          "asset": "schema-engine-linux-static-x64.gz",
+          "archive": "gz",
+          "upstream": "https://binaries.prisma.sh/all_commits/d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/linux-static-x64/schema-engine.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-schema-engine-8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/schema-engine-linux-static-x64.gz",
+          "assetSha256": "1f609ddc58e6f5e21934976311162f1e5daa954fd6359c55ef65fee2033c45b4",
+          "executableSha256": "ec4adf16b03f1a37bae5965e4a8f265dccb48096fe03ec253385609babbddfaf"
+        },
+        "linux-arm64": {
+          "platform": "linux-static-arm64",
+          "asset": "schema-engine-linux-static-arm64.gz",
+          "archive": "gz",
+          "upstream": "https://binaries.prisma.sh/all_commits/d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/linux-static-arm64/schema-engine.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-schema-engine-8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/schema-engine-linux-static-arm64.gz",
+          "assetSha256": "a80add0047a24ef33cc8e87070caa65a107a406addf3341bc4ccad72c147bbd4",
+          "executableSha256": "edd9415943a93f06ca11564f1fb151e6966410bb35d52ab1fe6d5d613fce91ab"
+        }
+      }
+    }
+  }
+}

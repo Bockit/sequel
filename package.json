@@ -1,0 +1,45 @@
+{
+  "name": "@bockit/sequel",
+  "version": "0.0.0",
+  "description": "One CLI for a TypeScript app's Postgres data layer: Prisma schema, reviewed SQL migrations, typed SQL queries.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bockit/sequel.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "sequel": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "vendor/",
+    "binaries.json",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2"
+  }
+}
