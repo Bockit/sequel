@@ -4,12 +4,13 @@ Read `.forge/SPEC.md` (what it does) and `.forge/TECH-SPEC.md` (how it's built) 
 
 ## Commands
 
-Not scaffolded yet. Once they are:
-
-- `yarn test`: `node:test`, run directly on `.ts` under Node 24's type stripping. Integration tests need `SEQUEL_TEST_DATABASE_URL`, a Postgres 18 server where the role can create databases.
-- `yarn build`: `tsc` into `dist/`, the published output.
-- `yarn format`: Prettier.
-- `node src/cli.ts <command>`: run the CLI from source.
+- `yarn test`: `node --test`, run directly on `.ts` under Node 24's type stripping, with no tsx.
+  - Integration tests need `SEQUEL_TEST_DATABASE_URL`, a Postgres 18 server where the role can create databases.
+  - The pinned-binaries test fetches sqlc, Squawk and the schema engine into the cache (`SEQUEL_CACHE_DIR`, else `~/.cache/sequel`), so its first run needs the network.
+- `yarn typecheck`: `tsc` over `src/` and `scripts/`, tests included, emitting nothing.
+- `yarn build`: `tsc -p tsconfig.build.json` into `dist/`, the published output, without the tests.
+- `yarn format`: Prettier. It skips Markdown, `.forge/`, `docs/`, `vendor/` and `dist/`.
+- `node src/cli.ts <command>`: run the CLI from source, such as `node src/cli.ts --help`.
 
 ## Conventions
 

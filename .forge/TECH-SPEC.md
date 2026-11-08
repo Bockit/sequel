@@ -93,6 +93,8 @@ scripts/         maintenance, such as mirroring binaries; not published
   - **Changing a pin:**
     - One commit changes the manifest (and, for the engine, the vendored WASM), after the acceptance tests pass on every platform.
     - Mirror assets are uploaded by `scripts/mirror-binaries.ts`, which James runs. It checks each upstream asset against upstream's published checksum and against the manifest before uploading.
+    - Upstream's published checksum is Prisma's `.sha256` file for the engine. sqlc and Squawk publish no checksum files, so for them it is the sha256 digest GitHub records for the release asset.
+    - Mirror releases are pre-releases, so a binaries release never becomes the repo's Latest.
 
 ## 6. Schema WASM (`src/schema/`, `vendor/prisma-schema-wasm/`)
 
