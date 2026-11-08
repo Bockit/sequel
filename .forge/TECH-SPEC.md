@@ -34,7 +34,7 @@ src/
   generator/      the sqlc process plugin: GenerateRequest JSON in, TypeScript out
   binaries/       the pins manifest, fetching, verification, the cache
   db/             connections, and the shadow-database lifecycle
-vendor/prisma-schema-wasm/   loader, .wasm, LICENSE, README
+vendor/prisma-schema-wasm/   loader, .wasm, LICENSE, README, package.json
 test/fixtures/   fixture schema and migrations, the eight queries, recorded GenerateRequests
 scripts/         maintenance, such as mirroring binaries; not published
 ```
@@ -70,11 +70,12 @@ scripts/         maintenance, such as mirroring binaries; not published
     - the upstream URL and the mirror URL;
     - the sha256 of the asset, and of the executable inside it.
   - **Pins:**
-    - **Prisma schema engine and schema WASM:** engine `8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8`, the engine behind Prisma 7.10.1, using the Prisma 7 schema dialect. The pin is provisional until acceptance test 4 (§13) passes. The fallback is the 6.19.2 engine, `c2990dca591cba766e3b7ef5d9e8a84796e47ab7`, whose schemas need `url` in the datasource.
+    - **Prisma schema engine and schema WASM:** engine `8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8`, the engine behind Prisma 7.10.1, using the Prisma 7 schema dialect.
     - **sqlc** v1.31.1.
     - **Squawk** 2.71.0.
   - **Lockstep:** the schema engine and the schema WASM are always the same engine commit, and a test fails otherwise.
   - **Platforms:** darwin-arm64, linux-x64 and linux-arm64, each mapped in the manifest to every tool's own platform name. Any other platform fails with a message listing the supported ones.
+    - The schema engine's Linux builds are Prisma's static ones, `linux-static-x64` and `linux-static-arm64`: one asset per architecture with OpenSSL linked in, so there is no libc or OpenSSL detection.
   - **Sources:**
     - the engine from `https://binaries.prisma.sh/all_commits/<engine-hash>/<platform>/schema-engine.gz`;
     - sqlc and Squawk from their GitHub releases;
@@ -97,15 +98,17 @@ scripts/         maintenance, such as mirroring binaries; not published
 
   - **Contents:** the `@prisma/prisma-schema-wasm` package's CommonJS loader and its `.wasm`, byte for byte as published, plus:
     - `LICENSE`, copied from `prisma/prisma-engines`;
-    - `README.md`, giving the source, the package version, the engine commit, and "no changes".
+    - `README.md`, giving the source, the package version, the engine commit, and "no changes";
+    - `package.json` containing only `{"type":"commonjs"}`, because sequel's own `"type": "module"` would otherwise make Node load the loader as ESM.
   - **Loading:** through `createRequire`, so the loader stays unmodified. The loader reads the `.wasm` from its own `__dirname`, so the two files stay together, and `package.json`'s `files` includes the folder.
+  - **Panics:** `src/schema/` defines `globalThis.PRISMA_WASM_PANIC_REGISTRY` before its first call. The loader reports a Rust panic through it, and without it the panic's message is lost behind an unrelated `TypeError`.
   - **Who uses it:** only sequel's CLI. No app imports it.
   - **Input:** the schema folder's files are passed to it as a list, so multi-file errors name their file.
   - **Updating:** replace both files from the npm tarball of the pinned version, after checking the tarball against the registry's integrity hash, then update the README. The version must match the engine pin.
 
 ## 7. Schema-Engine Client (`src/engine/`)
 
-  - **Process:** the native binary, spawned once per command run with `--datamodels <file>` for each schema file and its working directory set to the schema folder.
+  - **Process:** the native binary, spawned once per command run with `--datasource '{}'` and its working directory set to the schema folder. The 7.x engine won't start without `--datasource`. The schema files travel in each request, so `--datamodels` is not passed.
   - **Protocol:** JSON-RPC 2.0 over stdio, one message per line in each direction.
   - **The engine sends requests of its own.**
     - Script output arrives as a `print` request carrying `params.content`. Each one is answered `{ id, jsonrpc: '2.0', result: {} }`, or the engine blocks.
@@ -117,8 +120,11 @@ scripts/         maintenance, such as mirroring binaries; not published
     - From: `url`, a shadow database into which sequel's own runner has replayed the migrations (`migrate new`, and drift in `check`).
     - To: `schemaDatamodel`, with the schema folder's files.
     - The engine never reads the migrations itself: its `migrations` source expects Prisma's folder layout, and replaying with our runner applies the history exactly as `deploy` does.
-  - **Connection:** the schema has no `url` (Prisma 7 dialect), so the engine gets the connection from the configuration, as a datasource override. This is still to be verified: acceptance test 4.
-  - **Output** is used as is. It equals what the Prisma CLI writes, byte for byte: acceptance test 2.
+    - `exitCode` is requested, and a difference is read from it, never from the script's text.
+    - `sequel_migrations` is passed in `externalTables`, schema-qualified, because the engine ignores only `_prisma_migrations` and would otherwise drop it as drift.
+  - **Connection:** the schema has no `url` (Prisma 7 dialect). The connection is the `url` source's own URL, sent in the request and never on the command line, so `ps` never shows a password and one engine process can diff any database.
+    - The engine doesn't default the user as `pg` does, so the client fills in the URL's user from `pg`'s defaults first.
+  - **Output** is the `print` content plus a final newline. That equals what `prisma migrate diff --output` writes, byte for byte: acceptance test 2.
 
 ## 8. Migrations (`src/migrate/`)
 
@@ -312,9 +318,9 @@ scripts/         maintenance, such as mirroring binaries; not published
 
   - **Acceptance tests,** which gate any pin change. They are the spikes, made permanent:
     1. The schema WASM validates and formats a multi-file schema, and reports Prisma's own error on a typo.
-    2. The engine's diff from empty equals the Prisma CLI's output for the fixture schema, against a committed expected file.
+    2. The engine's diff from empty equals the Prisma CLI's output for the fixture schema, against a committed expected file. The file comes from `prisma migrate diff --output`, run with a `datasource` in `prisma.config.ts`: without one, the 7.x CLI exits 0 and writes nothing.
     3. Drift is empty after the fixture migrations are deployed.
-    4. Prisma 7 build, with no `url` in the schema: diff and drift work with the connection supplied by the configuration. Until this passes, the engine pin is provisional.
+    4. With no `url` in the schema, the engine, started with `--datasource '{}'`, diffs a shadow database given as a `url` source against the schema folder. The diff is empty after the fixture migrations, with `sequel_migrations` present. It gives the expected SQL when the schema is ahead and when the database is ahead.
     5. The eight-query suite.
   - **Before a pin changes,** the tests run on every supported platform.
 
@@ -357,7 +363,7 @@ scripts/         maintenance, such as mirroring binaries; not published
 
 ## 16. Open Items
 
-  - **Prisma 7 engine pin:** acceptance test 4 must pass. Fallback: the 6.19.2 engine.
+  - **TLS to Postgres:** the engine's `sslmode=require` connections are untested. The static Linux builds link OpenSSL 3.4.1. Run acceptance tests 3 and 4 against a TLS server before relying on it.
   - **Prisma 7's end of life:** it is maintenance-only for 18 months after Prisma 8 goes generally available (no date yet; rc.33 as of 6 Nov 2026). After that, the schema language is frozen at the pin, and the mirrored builds keep working.
   - **pg-schema-diff** (Stripe, MIT), later, as a replacement for the engine's diff, for safer plans: concurrent indexes, `NOT VALID` then validate, hazard warnings. It lists Postgres 14–17 as supported, and we run 18.6.
   - **sqlc's next release,** which brings a new pure-Go parser and analysis core. Pin it, and run the acceptance tests before moving.
