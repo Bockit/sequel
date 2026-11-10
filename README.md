@@ -8,7 +8,7 @@ One CLI for a TypeScript app's Postgres data layer:
 
 Nothing from sequel runs in your app except the generated query code, which calls [`pg`](https://node-postgres.com). Your app drops the `prisma` and `@prisma/client` packages and every install hook.
 
-> **Status:** design complete, implementation not started. Commands and config below describe the intended interface and may change before the first release. See [Status](#status).
+> **Status:** early development. The repo skeleton is in place, but the commands are stubs. Commands and config below describe the intended interface and may change before the first release. See [Status](#status).
 
 ## Why
 
@@ -170,21 +170,15 @@ Collations, CHECKs, partial and expression indexes, vector and trigram indexes, 
 
 ## Status
 
-Nothing is built yet. The order of work:
+The commands are stubs so far. The order of work:
 
-1. Repo skeleton: licence layout, vendored schema WASM, binary fetching.
+1. Repo skeleton: licence layout, vendored schema WASM, binary fetching. Done.
 2. The generator and its eight-query test suite, proved by porting real queries.
 3. The runner, the schema-engine client, `migrate` and `check`.
 4. Adopt sequel in a first app, module by module, then drop `@prisma/client`.
 5. A second app: split its schema into files, then the same steps.
 
-Open questions:
-- confirming the Prisma 7 engine pin;
-- pg-schema-diff as a safer diff, later;
-- sqlc's next release;
-- sqlc #3710.
-
-They are tracked in [`.forge/TECH-SPEC.md`](.forge/TECH-SPEC.md) §16.
+Other open work is tracked in [`to-do.md`](to-do.md).
 
 ## Licence
 

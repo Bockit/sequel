@@ -59,7 +59,7 @@ It is for Postgres applications on Node.
     - `:many`: a list of rows;
     - `:exec`: nothing;
     - `:execrows`: the number of rows affected.
-  - Parameters are named in the SQL. A positional parameter takes the name of the column it is compared with.
+  - Parameters are named in the SQL. A positional parameter takes the name of the column it is compared with, and one with no name to take is an error.
 
 ### Generated module
   - One TypeScript file beside each query file. It is generated, committed and never edited by hand, and its first line says so.
@@ -181,14 +181,20 @@ Every command:
   - **Nullability follows the query:**
     - a column reached through an outer join may be null;
     - `x IS NOT NULL` is a boolean that is never null;
-    - an aggregate over no rows may be null.
-  - **Known limit:** a cast is reported as never null. The convention is not to cast a nullable expression.
+    - a function call may be null, unless the function can't return null, such as `count`;
+    - a `coalesce` ending in a literal is never null;
+    - an element of an array may be null, unless the query proves it can't.
+  - A comment on a query asserts that a column, or the elements of an array column, are never null where sequel can't prove it.
+  - **Known limits:**
+    - a cast is reported as never null. A nullable expression is not cast, and a cast is not a way to assert never null;
+    - a comparison or arithmetic with a nullable operand, `nullif`, a column from a lateral outer join, a scalar subquery around a plain column, and `CASE … THEN NULL` can be typed as never null when they can be null.
   - **Values are typed as the node-postgres driver returns them by default:**
-    - text, `uuid` and similar types → `string`;
+    - text, `uuid`, `time`, `money` and similar types → `string`;
     - `smallint`, `integer`, `real` and `double precision` → `number`;
     - `bigint` and `numeric` → `string`. `bigint` can be set to another type, and the app then configures its driver to match;
     - `boolean` → `boolean`;
     - `timestamp`, `timestamptz` and `date` → `Date`;
+    - `interval`, `point` and `circle` → the objects the driver returns;
     - `json` and `jsonb` → `unknown`;
     - `bytea` → `Buffer`;
     - an enum → a union of its values as string literals;
