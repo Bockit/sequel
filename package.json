@@ -28,7 +28,7 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
-    "test": "node --test",
+    "test": "node --test 'src/**/*.test.ts'",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc",
     "format": "prettier --write ."

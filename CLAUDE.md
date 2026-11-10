@@ -4,7 +4,7 @@ Read `.forge/SPEC.md` (what it does) and `.forge/TECH-SPEC.md` (how it's built) 
 
 ## Commands
 
-- `yarn test`: `node --test`, run directly on `.ts` under Node 24's type stripping, with no tsx.
+- `yarn test`: `node --test 'src/**/*.test.ts'`, run directly on `.ts` under Node 24's type stripping, with no tsx. The glob keeps `node --test` from running the generated modules in `test/fixtures/` as tests.
   - Integration tests need `SEQUEL_TEST_DATABASE_URL`, a Postgres 18 server where the role can create databases.
   - The pinned-binaries test fetches sqlc, Squawk and the schema engine into the cache (`SEQUEL_CACHE_DIR`, else `~/.cache/sequel`), so its first run needs the network.
 - `yarn typecheck`: `tsc` over `src/` and `scripts/`, tests included, emitting nothing.
