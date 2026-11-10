@@ -217,15 +217,16 @@ scripts/         maintenance, such as mirroring binaries; not published
     3. Write sqlc's config into a temporary directory. It is never committed. It has one `sql` block per folder of query files, each with:
        - `engine: postgresql`;
        - `schema`: the dump;
-       - `queries` and `out`: that folder;
-       - `database.uri`: the test database;
+       - `queries`: that folder, and `out`: a temporary folder;
+       - `database.uri`: `${…}` naming an environment variable sequel sets, so the URL and its password are never written to disk;
        - `analyzer.database: true`;
-       - codegen: sequel's process plugin, with `format: json`;
+       - codegen: sequel's process plugin, with `format: json`, declared once per block, so sequel can tell which block a failure came from;
        - the plugin options, such as the bigint mode.
-    4. Run `sqlc generate`, or `sqlc diff` for `check`.
+       - Every path is relative to the config's folder, because sqlc joins even an absolute path onto it.
+    4. Run `sqlc generate`. `check` compares its output with the modules in place, byte for byte, rather than using `sqlc diff`, which exits 1 silently for a missing module and doesn't see orphans.
   - **The database analyzer is required.** sqlc's static analyzer types `IS NOT NULL`, `MAX`/`MIN` over timestamps and pgvector's `<=>` as `any`, and raises a false "ambiguous column" error on a CTE inside an `UPDATE`. The database analyzer gets all of these right.
   - **The plugin command is a wrapper.** sqlc runs the plugin with no `PATH`, so `src/generate/` writes a per-run `#!/bin/sh` wrapper that `exec`s `process.execPath` on the generator's entry. `PATH` isn't passed through sqlc's `env`.
-  - **All or nothing:** nothing is written into place unless every block generates.
+  - **All or nothing:** sqlc writes each block's output as it goes, even when a later block fails, so every block writes into a temporary folder, and sequel moves modules into place only when every block generates.
   - **Orphans:** generated modules are recognised by their header line. One whose query file is gone is deleted.
   - **Watch:** a recursive `fs.watch` on the query folders and the migrations folder, debounced.
   - **Formatting:** apps exclude generated modules from their formatter and linter, since `check` compares the generated output byte for byte.
@@ -261,7 +262,7 @@ scripts/         maintenance, such as mirroring binaries; not published
     - `:execlastid` is MySQL-only.
     - `:copyfrom` would need `pg-copy-streams` in every app; a bulk insert is `INSERT … SELECT * FROM unnest(@a::…[], @b::…[]) AS u(a, b)` with `:exec`. The alias is required, because sqlc reports the bare call as ambiguous with two or more arrays.
     - The `:batch*` kinds need pipelining, which `pg` lacks.
-  - **Deterministic output** (stable order, fixed formatting, a trailing newline), so `sqlc diff` is meaningful.
+  - **Deterministic output** (stable order, fixed formatting, a trailing newline), so `check`'s byte-for-byte comparison is meaningful.
 
 ## 11. Extras Snapshot (`src/extras/`)
 
@@ -318,7 +319,7 @@ scripts/         maintenance, such as mirroring binaries; not published
 | 4 | `WITH claimed AS (… FOR UPDATE SKIP LOCKED) UPDATE … RETURNING` | generates |
 | 5 | `COUNT(*)::int`, `MAX(updated_at)`, `COALESCE(SUM(…),0)::bigint`, grouped | `COUNT` is `number`; `MAX` is `Date \| null` |
 | 6 | `= ANY(@names::text[])` with `ROW_NUMBER() OVER (…)` | parameter is `string[]` |
-| 7 | pgvector `embedding <=> $1::vector` | `number \| null` |
+| 7 | pgvector `embedding <=> @embedding::vector` | `number \| null` |
 | 8 | `DISTINCT ON (…)`, latest per group | row fully typed |
 
   - **Acceptance tests,** which gate any pin change. They are the spikes, made permanent:

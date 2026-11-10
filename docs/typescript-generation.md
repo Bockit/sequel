@@ -66,7 +66,7 @@ The types describe what Postgres can return. The generator follows sqlc's `not_n
 - It reports all failures, not just the first.
 - sqlc then fails the run and prints `error generating code: process: error running command ` followed by the stderr text.
 
-**R6. Determinism.** The output is a pure function of the request and the options. The same input gives byte-identical output, so `sqlc diff` is meaningful.
+**R6. Determinism.** The output is a pure function of the request and the options. The same input gives byte-identical output, so `check`'s byte-for-byte comparison is meaningful.
 
 ## 3. Files
 
@@ -395,7 +395,7 @@ The `catalog` field is ignored. Matching is case-sensitive on the unquoted text.
 
 **R47. Enums.** An enum's type is the union of string literals of its `vals`, in catalog order (Postgres's sort order), written inline wherever it is used, with no named alias.
 - **Values:** values that aren't identifiers are fine, as string literals: `'very-tense'`, `'Hello World'`, `"it's"` written as `'it\'s'`, and `''`.
-- **Empty enums:** an enum with no values is `never`.
+- **Empty enums:** an enum with no values is `unknown` in a row, so its arrays are `unknown` too (R48), because `row[i]` can't be assigned to `never`. As a parameter it is `never`.
 - **Schemas:** an enum in another schema (`ops.severity`) resolves through its schema; one quoted in SQL (`"TaskState"`) arrives quoted and is unquoted (R44).
 - **Arrays:** arrays of an enum need parsing (✱, §13).
 
@@ -497,7 +497,7 @@ R64 decides the elements of array columns separately.
 
 Keywords match at depth 0, case-insensitively. To find the list:
 - The first depth-0 word among `SELECT`, `INSERT`, `UPDATE`, `DELETE` and `MERGE` decides the statement, so a leading `WITH` is passed over.
-- After `SELECT`, skip `ALL`, or `DISTINCT` and any `ON ( … )`. The list ends at the next depth-0 `FROM`, `WHERE`, `GROUP` (unless the word before it is `WITHIN`), `HAVING`, `WINDOW`, `UNION`, `INTERSECT`, `EXCEPT`, `ORDER`, `LIMIT`, `OFFSET`, `FETCH` or `FOR`, or at the end of the text.
+- After `SELECT`, skip `ALL`, or `DISTINCT` and any `ON ( … )`. The list ends at the next depth-0 `FROM` (unless the words before it are `IS [NOT] DISTINCT`), `WHERE`, `GROUP` (unless the word before it is `WITHIN`), `HAVING`, `WINDOW`, `UNION`, `INTERSECT`, `EXCEPT`, `ORDER`, `LIMIT`, `OFFSET`, `FETCH` or `FOR`, or at the end of the text.
 - For the other statements, the list runs from the depth-0 `RETURNING` to the end of the text.
 
 The list is split at depth-0 commas into items. To match an item against a shape below, remove a trailing `AS name` or bare alias, and any redundant parentheses around the whole expression.
@@ -656,7 +656,7 @@ export async function n(client: Queryable, params: NParams): Promise<number> {
 
 | Condition | Rule | Message (after `<file>: <query>: `) |
 |---|---|---|
-| plugin options malformed or unknown | R3 | `invalid plugin option <key>` (no file or query prefix) |
+| plugin options malformed or unknown | R3 | `invalid plugin option <key>`, or `invalid plugin options: not a JSON object` (no file or query prefix) |
 | filename doesn't end in `.sql` | R7 | `query file name must end in .sql` (no query) |
 | reserved or colliding function name | R17 | `the function name <n> is reserved` / `gives the same function name as <other>`. `Rename the query.` |
 | unsupported kind | R22 | `:<kind> is not supported. <fix from R22>.` |
@@ -1016,7 +1016,7 @@ Each line is one unit test for the generator. The input is a recorded or hand-bu
 - Every spelling in §12 maps to its row. A test drives each spelling through the R44 forms: bare, `pg_catalog`-prefixed in `name`, `schema: "pg_catalog"`, and with modifiers: `timestamp(3) with time zone`, `time(2) without time zone`, `numeric(5,2)`, `character varying(40)`, `interval hour to minute`, `"bit"`.
 - An enum as `{schema:"public",name:"task_state"}`, `{schema:"",name:"task_state"}`, `{schema:"ops",name:"severity"}`, `{schema:"",name:"ops.severity"}`, and a quoted `{schema:"",name:"\"TaskState\""}` with an enum `TaskState` in the catalog: all resolve (R45).
 - A bare enum name found only in a non-default schema resolves. Found in two non-default schemas and not the default, it is `unknown` (R45).
-- Enum values `very-tense`, `Hello World`, `it's` and `''`, and an empty enum (`never`) (R47).
+- Enum values `very-tense`, `Hello World`, `it's` and `''`, and an empty enum (`unknown` in a row, `never` as a parameter) (R47).
 - Enum arrays and other ✱ arrays use `parsePgArray`. `int4[]`, `text[]` and `date[]` don't. A module with no ✱ column has no helper (R48, R50).
 - `numeric[]` rows are `(number | null)[]`; `int8[]` rows are `(string | null)[]` (§12 notes 1 and 2, R48).
 - A 2-dimensional `text[][]` column is `(string | null)[][]` (R48). A `text[]` parameter is `string[]`.
@@ -1250,5 +1250,6 @@ Every other array comes back as its text. Observed examples:
 | parameter: `sqlc.narg(x)`, also cast | false | | can be null |
 | parameter: bare, compared with or inserted into a nullable column | false | | can be null |
 | parameter: bare, compared with or inserted into a `NOT NULL` column | true | | never null |
+| parameter: bare, compared with a column inside a CTE or a subquery, even a `NOT NULL` one | false | | can be null |
 | parameter: inside a cast or a function call (`@a::text`, `@ids::int[]`, `upper(@a)`, `coalesce(@a, 'y')`) | true | | never null |
 | parameter: in `LIMIT` or `OFFSET` | true | | never null |
