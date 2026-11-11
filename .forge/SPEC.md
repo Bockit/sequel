@@ -70,7 +70,7 @@ It is for Postgres applications on Node.
 
 ### Databases
   - **Target:** the database `migrate deploy` migrates, a developer's or production.
-  - **Test:** a database sequel keeps migrated to the latest migration.
+  - **Test:** a database sequel keeps migrated to the latest migration or, with external migrations, that the app's other tool migrates.
     - Queries are typed against it, and the extras snapshot is read from it.
     - The app's own tests can share it.
   - **Shadow:** a scratch database in which sequel replays the migration history.
@@ -84,8 +84,18 @@ It is for Postgres applications on Node.
     - how to connect to the target and test databases, and optionally to a fixed shadow database;
     - the migration timeouts;
     - the lint cut-over;
-    - type options.
+    - type options;
+    - whether the app's migrations are external.
   - Connections come from the environment, through the configuration, never from the schema.
+
+### External migrations
+  - A setting for an app whose schema and migrations another tool manages. sequel then only types its queries.
+  - With it set:
+    - sequel reads no schema folder and no migrations. The configuration needs neither, and ignores them if given;
+    - sequel never migrates the test database. Queries are typed against it as the other tool left it, and that tool's migration history in it is fine;
+    - only the tools that type queries are fetched;
+    - the commands that act on the schema, the migrations or the extras snapshot refuse (§3).
+  - Without the setting, sequel manages the schema and migrations as the rest of this spec describes.
 
 ### Pinned tools
   - sequel uses fixed versions of the tools it is built on. It fetches each one on first use, verifies it against a checksum recorded in sequel, and caches it. Nothing is fetched at install time.
@@ -106,6 +116,8 @@ Every command:
 | `migrate deploy` | target |
 | `generate`, `extras` | test |
 | `check` | test and shadow |
+
+With external migrations (§2), `check` needs only the test database. `validate`, `format`, `migrate new`, `migrate lint`, `migrate adopt-prisma`, `migrate deploy` and `extras` refuse, with a message naming the setting.
 
 ### `sequel validate`
   - Checks the schema folder and prints each error with its file and line.
@@ -142,11 +154,11 @@ Every command:
   - With nothing pending, it says so and changes nothing.
 
 ### `sequel generate [--watch]`
-  - Brings the test database up to the latest migration, under the same rules as `deploy`.
+  - Brings the test database up to the latest migration, under the same rules as `deploy`. With external migrations, it leaves the test database as it is.
   - Types every query against the test database and writes each query file's generated module.
   - Deletes any generated module whose query file is gone.
   - All or nothing: if any query fails, it reports each failure with its file and line, and writes nothing.
-  - `--watch` reruns when a query file or a migration changes. A failure is reported, watching continues, and the last good output stays in place.
+  - `--watch` reruns when a query file or a migration changes, or only a query file with external migrations. A failure is reported, watching continues, and the last good output stays in place.
 
 ### `sequel extras`
   - Brings the test database up to the latest migration, then rewrites the extras snapshot from it.
@@ -160,6 +172,7 @@ Every command:
     - a stale extras snapshot;
     - a schema folder that doesn't validate.
   - Runs every check and reports every failure, not just the first. Each failure names the command that fixes it.
+  - With external migrations, it leaves the test database as it is and checks only the generated modules. It prints one line saying that it skipped drift, lint, the extras snapshot and schema validation because the migrations are managed elsewhere.
 
 ## 4. Production Migration Guarantees
 

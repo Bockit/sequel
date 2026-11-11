@@ -61,6 +61,8 @@ scripts/         maintenance, such as mirroring binaries; not published
   - **Shadow databases:**
     - By default they are created on the test database's server, so its role needs `CREATEDB`, as Prisma's `migrate dev` requires.
     - An optional fixed shadow database is for servers where the role can't create databases, as with Prisma's `shadowDatabaseUrl`.
+  - **External migrations** (SPEC §2) is one top-level boolean, `externalMigrations`, not a field of `migrations`. The setting is independent of the folder keys, which stay valid, and ignored, while it is set.
+    - It is acted on only in `src/cli.ts` and `src/check.ts`. The commands it disables refuse straight after loading the config, before they connect, read a file or fetch a binary. The runner, the engine client and `src/generate/` know nothing of it.
   - The keys are defined, with their defaults, in `src/config/`. This spec doesn't list them.
 
 ## 5. Pinned Tools
@@ -216,7 +218,7 @@ scripts/         maintenance, such as mirroring binaries; not published
 ## 9. Query Generation (`src/generate/`)
 
   - **Each run:**
-    1. Deploy pending migrations to the test database, under the runner's rules.
+    1. Deploy pending migrations to the test database, under the runner's rules. Skipped with external migrations, so the runner never sees the other tool's history table, such as `_prisma_migrations`. That table is dumped like any other, and sqlc ignores it.
     2. `pg_dump --schema-only --no-owner --no-privileges` of the test database, into a temporary file. sqlc's static parser fails on a raw Prisma migration history, and the dump is what the database actually holds, extras included.
     3. Write sqlc's config into a temporary directory. It is never committed. It has one `sql` block per folder of query files, each with:
        - `engine: postgresql`;
@@ -232,7 +234,7 @@ scripts/         maintenance, such as mirroring binaries; not published
   - **The plugin command is a wrapper.** sqlc runs the plugin with no `PATH`, so `src/generate/` writes a per-run `#!/bin/sh` wrapper that `exec`s `process.execPath` on the generator's entry. `PATH` isn't passed through sqlc's `env`.
   - **All or nothing:** sqlc writes each block's output as it goes, even when a later block fails, so every block writes into a temporary folder, and sequel moves modules into place only when every block generates.
   - **Orphans:** generated modules are recognised by their header line. One whose query file is gone is deleted.
-  - **Watch:** a recursive `fs.watch` on the query folders and the migrations folder, debounced.
+  - **Watch:** a recursive `fs.watch` on the query folders and the migrations folder (only the query folders with external migrations), debounced.
   - **Formatting:** apps exclude generated modules from their formatter and linter, since `check` compares the generated output byte for byte.
 
 ## 10. The Generator (`src/generator/`)
@@ -312,7 +314,8 @@ scripts/         maintenance, such as mirroring binaries; not published
     - `migrate adopt-prisma`: the file renames, history adoption, a failed Prisma row, a changed file, and a second run changing nothing;
     - migration discovery: nested folders, a misnamed file, a duplicate identity, a leftover `migration.sql`;
     - the engine client;
-    - `generate` and `check`, end to end.
+    - `generate` and `check`, end to end;
+    - an app with external migrations, end to end: a Prisma-layout migrations folder, a schema whose `datasource` has a `url`, and a test database migrated outside sequel with a `_prisma_migrations` table. `generate` and `check` work in it, and every disabled command refuses.
   - **The eight-query suite:** eight queries written against the fixture schema, each a shape that SQL type generators get wrong or fail to parse: outer joins, upserts, recursive CTEs, row locks, aggregates, array parameters, pgvector and `DISTINCT ON`. It runs fixture migrations, then the test database, sqlc and the generator. The output is compiled under `strict`, `verbatimModuleSyntax` and `erasableSyntaxOnly`, and each expected type is asserted at compile time. The same run refreshes the recorded `GenerateRequest` fixtures, so the unit tests track real sqlc output.
 
 | # | Query | Expected |
