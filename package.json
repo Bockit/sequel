@@ -1,6 +1,6 @@
 {
   "name": "@bockit/sequel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One CLI for a TypeScript app's Postgres data layer: Prisma schema, reviewed SQL migrations, typed SQL queries.",
   "license": "Apache-2.0",
   "repository": {
