@@ -1,6 +1,31 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs'
+import { mkdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { parseArgs } from 'node:util'
+import { ensureBinary } from './binaries/ensure-binary.ts'
+import { checkFailureMessage, runChecks } from './check.ts'
+import { loadConfig } from './config/load-config.ts'
+import { requireDatabase, type ResolvedConfig } from './config/resolve-config.ts'
 import { SequelError } from './errors.ts'
+import { readExtrasSnapshot } from './extras/snapshot.ts'
+import { writeAtomically } from './files.ts'
+import { generateModules } from './generate/generate-modules.ts'
+import { findQueryFolders } from './generate/modules.ts'
+import { watchAndRerun } from './generate/watch.ts'
+import { databaseName } from './db/connection.ts'
+import { adoptPrismaFiles, adoptPrismaHistory, PRISMA_LOCK_FILE } from './migrate/adopt-prisma.ts'
+import { deployTo } from './migrate/deploy.ts'
+import { findMigrations, readMigrationFile } from './migrate/files.ts'
+import { lintFailureMessage, lintMigrations, migrationsToLint } from './migrate/lint.ts'
+import { newMigration } from './migrate/new.ts'
+import {
+  assertValidSchema,
+  formatSchemaFiles,
+  readSchemaFiles,
+  schemaWarnings,
+} from './schema/schema.ts'
+import { unsupportedColumns } from './schema/unsupported.ts'
 
 type Flag = 'watch' | 'allow-out-of-order'
 
@@ -27,44 +52,184 @@ const OPTIONS = {
   'allow-out-of-order': { type: 'boolean' },
 } as const
 
-async function validate(_context: Context): Promise<void> {
-  notImplemented('validate')
+async function validate(context: Context): Promise<void> {
+  const config = await load(context)
+  const files = await readSchemaFiles(config.schema, config.root)
+  assertValidSchema(files, config.root)
+  for (const warning of schemaWarnings(files, config.root)) {
+    out(`${warning.shown}:${warning.line}: warning: ${warning.message}`)
+  }
+  out(`The schema is valid: ${plural(files.length, 'file')} in ${shown(config, config.schema)}.`)
 }
 
-async function format(_context: Context): Promise<void> {
-  notImplemented('format')
+async function format(context: Context): Promise<void> {
+  const config = await load(context)
+  const changed = await formatSchemaFiles(
+    await readSchemaFiles(config.schema, config.root),
+    config.root,
+  )
+  for (const file of changed) out(`Formatted ${shown(config, file)}`)
+  if (changed.length === 0) out(`The schema is already formatted.`)
 }
 
-async function migrateNew(_context: Context): Promise<void> {
-  notImplemented('migrate new')
+async function migrateNew(context: Context): Promise<void> {
+  const config = await load(context)
+  const { file, findings } = await newMigration({ config, name: context.positionals[0] as string })
+  if (file === undefined) {
+    out('The migrations already match the schema: no migration written.')
+    return
+  }
+  out(`Wrote ${shown(config, file)}`)
+  if (findings.length > 0) {
+    throw new SequelError(
+      `${lintFailureMessage(findings)}\n${shown(config, file)} stays written: fix it before committing.`,
+    )
+  }
+  out('Lint: no findings.')
 }
 
-async function migrateLint(_context: Context): Promise<void> {
-  notImplemented('migrate lint')
+async function migrateLint(context: Context): Promise<void> {
+  const config = await load(context)
+  const migrations =
+    context.positionals.length > 0
+      ? await Promise.all(
+          context.positionals.map(async (given) => {
+            const file = path.resolve(given)
+            if (!existsSync(file)) throw new SequelError(`${given} does not exist.`)
+            return readMigrationFile(file, config.root)
+          }),
+        )
+      : migrationsToLint(
+          await findMigrations(config.migrations, { root: config.root }),
+          config.lint.cutover,
+        )
+  // The index rule reads the schema folder; without one, it is skipped.
+  const schema = await readSchemaFiles(config.schema, config.root).catch((error: unknown) => {
+    if (error instanceof SequelError) return undefined
+    throw error
+  })
+  const findings = await lintMigrations({
+    squawk: await ensureBinary('squawk'),
+    migrations,
+    root: config.root,
+    ...(schema === undefined ? {} : { unsupported: unsupportedColumns(schema) }),
+  })
+  if (findings.length > 0) throw new SequelError(lintFailureMessage(findings))
+  out(`${plural(migrations.length, 'migration file')} linted: no findings.`)
 }
 
-async function migrateAdoptPrisma(_context: Context): Promise<void> {
-  notImplemented('migrate adopt-prisma')
+async function migrateAdoptPrisma(context: Context): Promise<void> {
+  const config = await load(context)
+  const url = requireDatabase(config, 'target')
+  const files = await adoptPrismaFiles(config.migrations, config.root)
+  for (const { from, to } of files.renamed) {
+    out(`Renamed ${shown(config, from)} to ${shown(config, to)}`)
+  }
+  if (files.lockRemoved) {
+    out(`Removed ${shown(config, path.join(config.migrations, PRISMA_LOCK_FILE))}`)
+  }
+  if (files.renamed.length > 0 || files.lockRemoved) {
+    out('Commit the renamed files. Their contents are unchanged, so their checksums still match.')
+  } else {
+    out("Files: none in Prisma's layout, so nothing to rename.")
+  }
+
+  const migrations = await findMigrations(config.migrations, { root: config.root })
+  const history = await adoptPrismaHistory({ url, migrations })
+  const database = databaseName(url)
+  if (history.status === 'adopted') {
+    out(
+      `History: created sequel_migrations on ${database} from ${plural(history.rows, 'applied Prisma migration')}. _prisma_migrations is left as it was.`,
+    )
+  } else if (history.status === 'already-adopted') {
+    out(`History: ${database} already has sequel_migrations, so nothing to adopt.`)
+  } else {
+    out(
+      `History: ${database} has no Prisma history (_prisma_migrations), so nothing to adopt. \`sequel migrate deploy\` creates sequel's history.`,
+    )
+  }
 }
 
-async function migrateDeploy(_context: Context): Promise<void> {
-  notImplemented('migrate deploy')
+async function migrateDeploy(context: Context): Promise<void> {
+  const config = await load(context)
+  await deployTo(config, requireDatabase(config, 'target'), {
+    allowOutOfOrder: context.flags['allow-out-of-order'],
+    log: out,
+  })
 }
 
-async function generate(_context: Context): Promise<void> {
-  notImplemented('generate')
+async function generate(context: Context): Promise<void> {
+  const config = await load(context)
+  const url = requireDatabase(config, 'test')
+  const once = async () => {
+    await deployTo(config, url, { log: out, quietWhenCurrent: true })
+    const folders = await findQueryFolders(config.queries)
+    const result = await generateModules({
+      sqlc: await ensureBinary('sqlc'),
+      databaseUrl: url,
+      folders,
+      bigint: config.types.bigint,
+      root: config.root,
+    })
+    for (const file of result.written) out(`Wrote ${shown(config, file)}`)
+    for (const file of result.deleted) out(`Deleted ${shown(config, file)}: its query file is gone`)
+    if (result.written.length === 0 && result.deleted.length === 0) {
+      out(`The generated modules are up to date (${plural(result.unchanged.length, 'module')}).`)
+    }
+  }
+  if (!context.flags.watch) {
+    await once()
+    return
+  }
+
+  const stop = new AbortController()
+  process.once('SIGINT', () => stop.abort())
+  process.once('SIGTERM', () => stop.abort())
+  const folders = [...(await findQueryFolders(config.queries)), config.migrations]
+  await watchAndRerun({
+    folders,
+    run: once,
+    onError: (error) => process.stderr.write(`${describeError(error)}\n`),
+    signal: stop.signal,
+  })
 }
 
-async function extras(_context: Context): Promise<void> {
-  notImplemented('extras')
+async function extras(context: Context): Promise<void> {
+  const config = await load(context)
+  const url = requireDatabase(config, 'test')
+  await deployTo(config, url, { log: out, quietWhenCurrent: true })
+  const next = await readExtrasSnapshot(url)
+  const current = await readFile(config.snapshot, 'utf8').catch(() => undefined)
+  if (current === next) {
+    out(`The extras snapshot is up to date: ${shown(config, config.snapshot)}`)
+    return
+  }
+  await mkdir(path.dirname(config.snapshot), { recursive: true })
+  await writeAtomically(config.snapshot, next)
+  out(`Wrote ${shown(config, config.snapshot)}`)
 }
 
-async function check(_context: Context): Promise<void> {
-  notImplemented('check')
+async function check(context: Context): Promise<void> {
+  const config = await load(context)
+  const failures = await runChecks(config, out)
+  if (failures.length > 0) throw new SequelError(checkFailureMessage(failures))
+  out('All checks passed.')
 }
 
-function notImplemented(command: string): never {
-  throw new SequelError(`sequel ${command} is not implemented yet.`)
+function load(context: Context): Promise<ResolvedConfig> {
+  return loadConfig({ config: context.config })
+}
+
+function shown(config: ResolvedConfig, file: string): string {
+  return path.relative(config.root, file) || '.'
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
+function out(message: string): void {
+  process.stdout.write(`${message}\n`)
 }
 
 const COMMANDS: Record<string, Command> = {
@@ -200,15 +365,15 @@ async function main(argv: string[]): Promise<void> {
   })
 }
 
+// An expected failure is its message alone; anything else keeps its stack.
+function describeError(error: unknown): string {
+  if (error instanceof SequelError) return error.message
+  return error instanceof Error ? (error.stack ?? error.message) : String(error)
+}
+
 try {
   await main(process.argv.slice(2))
 } catch (error) {
-  if (error instanceof SequelError) {
-    process.stderr.write(`${error.message}\n`)
-  } else {
-    process.stderr.write(
-      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
-    )
-  }
+  process.stderr.write(`${describeError(error)}\n`)
   process.exitCode = 1
 }

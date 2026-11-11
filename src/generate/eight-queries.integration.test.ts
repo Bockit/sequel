@@ -13,12 +13,11 @@ import { ensureBinary } from '../binaries/ensure-binary.ts'
 import { runPlugin } from '../generator/plugin.ts'
 import { generateModules, renderModules } from './generate-modules.ts'
 import {
-  applySqlFiles,
   compile,
   compileDir,
   createTestDatabase,
   FIXTURES,
-  fixtureMigrations,
+  deployFixtureMigrations,
   recordRequest,
   requestJson,
   skipWithoutDatabase,
@@ -139,7 +138,7 @@ describe('the eight-query suite', { skip: skipWithoutDatabase, timeout: 10 * 60_
   before(async () => {
     sqlc = await ensureBinary('sqlc')
     database = await createTestDatabase('eight')
-    await applySqlFiles(database.url, await fixtureMigrations())
+    await deployFixtureMigrations(database.url)
     const all: Rendered = await renderModules({
       sqlc,
       databaseUrl: database.url,

@@ -1,0 +1,6 @@
+// The fixture schema: weather stations, written for sequel's tests. It matches the fixture
+// migrations, so drift between them is empty.
+
+datasource db {
+  provider = "postgresql"
+}

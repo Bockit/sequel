@@ -1,0 +1,33 @@
+enum MetricKind {
+  temperature
+  humidity
+  wind_speed
+
+  @@map("metric_kind")
+}
+
+model DailyPeak {
+  id        Int        @id @default(autoincrement())
+  stationId Int        @map("station_id")
+  day       DateTime   @db.Date
+  metric    MetricKind
+  peak      Float
+  samples   Int        @default(1)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  station   Station    @relation(fields: [stationId], references: [id])
+
+  @@unique([stationId, day, metric])
+  @@map("daily_peak")
+}
+
+model Reading {
+  id         BigInt     @id @default(autoincrement())
+  stationId  Int        @map("station_id")
+  metric     MetricKind
+  value      Float
+  recordedAt DateTime   @map("recorded_at") @db.Timestamptz(3)
+  note       String?
+  station    Station    @relation(fields: [stationId], references: [id])
+
+  @@map("reading")
+}

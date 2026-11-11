@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const CLI = fileURLToPath(new URL('./cli.ts', import.meta.url))
 
-function sequel(...args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+function sequel(
+  cwd: string,
+  ...args: string[]
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(process.execPath, [CLI, ...args], (error, stdout, stderr) => {
+    execFile(process.execPath, [CLI, ...args], { cwd }, (error, stdout, stderr) => {
       resolve({ code: error ? (error.code as number) : 0, stdout, stderr })
     })
   })
@@ -16,7 +22,7 @@ function sequel(...args: string[]): Promise<{ code: number; stdout: string; stde
 describe('sequel', () => {
   it('prints help with --help, or with no command', async () => {
     for (const args of [['--help'], ['-h'], [], ['check', '--help']]) {
-      const { code, stdout } = await sequel(...args)
+      const { code, stdout } = await sequel(process.cwd(), ...args)
       assert.equal(code, 0)
       assert.match(stdout, /^Usage: sequel <command> \[options\]/)
       assert.match(stdout, /migrate deploy \[--allow-out-of-order\]/)
@@ -24,24 +30,60 @@ describe('sequel', () => {
     }
   })
 
-  const stubs: [string, string[]][] = [
-    ['validate', ['validate']],
-    ['format', ['format']],
-    ['migrate new', ['migrate', 'new', 'add_accounts']],
-    ['migrate lint', ['migrate', 'lint']],
-    ['migrate lint', ['migrate', 'lint', 'a.sql', 'b.sql']],
-    ['migrate adopt-prisma', ['migrate', 'adopt-prisma']],
-    ['migrate deploy', ['migrate', 'deploy', '--allow-out-of-order']],
-    ['generate', ['generate', '--watch']],
-    ['extras', ['extras']],
-    ['check', ['check', '--config', 'other.config.ts']],
+  const commands: string[][] = [
+    ['validate'],
+    ['format'],
+    ['migrate', 'new', 'add_accounts'],
+    ['migrate', 'lint'],
+    ['migrate', 'adopt-prisma'],
+    ['migrate', 'deploy', '--allow-out-of-order'],
+    ['generate'],
+    ['extras'],
+    ['check'],
   ]
-  for (const [command, args] of stubs) {
-    it(`stubs \`sequel ${args.join(' ')}\``, async () => {
-      const { code, stdout, stderr } = await sequel(...args)
-      assert.equal(code, 1)
-      assert.equal(stdout, '')
-      assert.equal(stderr, `sequel ${command} is not implemented yet.\n`)
+  for (const args of commands) {
+    it(`needs a config for \`sequel ${args.join(' ')}\``, async () => {
+      const cwd = await mkdtemp(path.join(tmpdir(), 'sequel-cli-'))
+      try {
+        const { code, stdout, stderr } = await sequel(cwd, ...args)
+        assert.equal(code, 1)
+        assert.equal(stdout, '')
+        assert.match(
+          stderr,
+          /^No sequel\.config\.ts in .+\. Create one that default-exports `defineConfig\(\{ … \}\)`, or pass --config <file>\.\n$/,
+        )
+      } finally {
+        await rm(cwd, { recursive: true, force: true })
+      }
+    })
+  }
+
+  const needs: [string[], string][] = [
+    [['migrate', 'deploy'], 'target'],
+    [['migrate', 'adopt-prisma'], 'target'],
+    [['generate'], 'test'],
+    [['extras'], 'test'],
+    [['check'], 'test'],
+  ]
+  for (const [args, role] of needs) {
+    it(`names the missing ${role} database for \`sequel ${args.join(' ')}\``, async () => {
+      const cwd = await mkdtemp(path.join(tmpdir(), 'sequel-cli-'))
+      try {
+        await writeFile(path.join(cwd, 'sequel.config.ts'), 'export default { databases: {} }\n')
+        await mkdir(path.join(cwd, 'prisma'))
+        await writeFile(
+          path.join(cwd, 'prisma', 'main.prisma'),
+          'datasource db {\n  provider = "postgresql"\n}\n',
+        )
+        const { code, stderr } = await sequel(cwd, ...args)
+        assert.equal(code, 1)
+        assert.equal(
+          stderr,
+          `sequel.config.ts: \`databases.${role}\` is not set. Set the environment variable the config reads it from.\n`,
+        )
+      } finally {
+        await rm(cwd, { recursive: true, force: true })
+      }
     })
   }
 
@@ -57,7 +99,7 @@ describe('sequel', () => {
   ]
   for (const [args, message] of usageErrors) {
     it(`refuses \`sequel ${args.join(' ')}\` without a stack trace`, async () => {
-      const { code, stderr } = await sequel(...args)
+      const { code, stderr } = await sequel(process.cwd(), ...args)
       assert.equal(code, 1)
       assert.match(stderr, message)
       assert.doesNotMatch(stderr, /\n\s+at /)

@@ -8,7 +8,7 @@ One CLI for a TypeScript app's Postgres data layer:
 
 Nothing from sequel runs in your app except the generated query code, which calls [`pg`](https://node-postgres.com). Your app drops the `prisma` and `@prisma/client` packages and every install hook.
 
-> **Status:** early development. The repo skeleton is in place, but the commands are stubs. Commands and config below describe the intended interface and may change before the first release. See [Status](#status).
+> **Status:** early development. Every command works, but sequel hasn't been adopted by an app yet, and commands and config may change before the first release. See [Status](#status).
 
 ## Why
 
@@ -138,7 +138,7 @@ Every command is non-interactive and exits non-zero with a message that names th
   - a deleted file;
   - a pending file older than the newest applied one, unless `--allow-out-of-order` is given.
 - **No down migrations.** Expand, then contract: a column drop is two deploys. First stop using the column in your queries, with its field still in the schema. Then remove the field, in the same commit as the `DROP COLUMN` migration. Generated queries name every column they read, so a drop can't break code that no longer uses the column.
-- **Lint findings** can be silenced with Squawk's `-- squawk-ignore <rule>` and a reason.
+- **Lint findings** can be silenced with Squawk's `-- squawk-ignore <rule> -- <reason>`, or with the reason on the line above.
 
 ### Generated code
 
@@ -170,11 +170,11 @@ Collations, CHECKs, partial and expression indexes, vector and trigram indexes, 
 
 ## Status
 
-The commands are stubs so far. The order of work:
+The order of work:
 
 1. Repo skeleton: licence layout, vendored schema WASM, binary fetching. Done.
-2. The generator and its eight-query test suite, proved by porting real queries.
-3. The runner, the schema-engine client, `migrate` and `check`.
+2. The generator and its eight-query test suite, proved by porting real queries. Done.
+3. The runner, the schema-engine client, `migrate` and `check`. Done.
 4. Adopt sequel in a first app, module by module, then drop `@prisma/client`.
 5. A second app: split its schema into files, then the same steps.
 

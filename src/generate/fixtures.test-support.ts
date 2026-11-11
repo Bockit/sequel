@@ -2,11 +2,24 @@
 // what sqlc sends the generator. Not published (tsconfig.build.json excludes it).
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
+import { resolveConfig, type ResolvedConfig } from '../config/resolve-config.ts'
+import { findMigrations } from '../migrate/files.ts'
+import { deployMigrations } from '../migrate/runner.ts'
 import { dumpSchema } from './pg-dump.ts'
 import { generatorEntry, shellQuote } from './plugin-wrapper.ts'
 import { runSqlc, sqlcConfig, writeSqlcConfig } from './sqlc.ts'
@@ -22,10 +35,11 @@ export const skipWithoutDatabase: string | false =
 
 export type TestDatabase = { name: string; url: string; drop: () => Promise<void> }
 
-// Creates `sequel_test_<label>_<random>` on the server, and returns a function that drops it.
-export async function createTestDatabase(label: string): Promise<TestDatabase> {
+// Creates `sequel_test_<label>_<random><suffix>` on the server, and returns a function that
+// drops it. A suffix of `_shadow` makes a database sequel may wipe.
+export async function createTestDatabase(label: string, suffix = ''): Promise<TestDatabase> {
   if (SERVER_URL === undefined) throw new Error('SEQUEL_TEST_DATABASE_URL is not set')
-  const name = `sequel_test_${label}_${randomBytes(4).toString('hex')}`
+  const name = `sequel_test_${label}_${randomBytes(4).toString('hex')}${suffix}`
   await onServer(`CREATE DATABASE "${name}"`)
   const url = new URL(SERVER_URL)
   url.pathname = `/${name}`
@@ -39,7 +53,7 @@ export async function createTestDatabase(label: string): Promise<TestDatabase> {
   }
 }
 
-async function onServer(sql: string): Promise<void> {
+export async function onServer(sql: string): Promise<void> {
   const client = new pg.Client({ connectionString: SERVER_URL })
   await client.connect()
   try {
@@ -49,8 +63,8 @@ async function onServer(sql: string): Promise<void> {
   }
 }
 
-// Applies each file in order, each in its own transaction, as the runner will. This stands
-// in for the runner until it exists.
+// Applies plain SQL files in order, each in its own transaction, for schemas that aren't
+// migrations, such as the worked example's. Migrations go through the runner.
 export async function applySqlFiles(url: string, files: string[]): Promise<void> {
   const client = new pg.Client({ connectionString: url })
   await client.connect()
@@ -70,12 +84,16 @@ export async function applySqlFiles(url: string, files: string[]): Promise<void>
   }
 }
 
-export async function fixtureMigrations(): Promise<string[]> {
-  const folder = path.join(FIXTURES, 'migrations')
-  return (await readdir(folder))
-    .filter((name) => name.endsWith('.sql'))
-    .sort()
-    .map((name) => path.join(folder, name))
+export const FIXTURE_MIGRATIONS = path.join(FIXTURES, 'migrations')
+export const FIXTURE_SCHEMA = path.join(FIXTURES, 'schema')
+
+// Deploys the fixture migrations with sequel's runner.
+export async function deployFixtureMigrations(url: string): Promise<void> {
+  await deployMigrations({
+    url,
+    migrations: await findMigrations(FIXTURE_MIGRATIONS, { root: REPO }),
+    timeouts: { lockMs: 5_000, statementMs: 60_000 },
+  })
 }
 
 // Runs sqlc on one folder, as `src/generate/` does, with a wrapper that also saves the
@@ -202,5 +220,60 @@ export async function compile(
     execFile(tsc, ['-p', dir], (error, stdout, stderr) => {
       resolve({ ok: error === null, output: stdout + stderr })
     })
+  })
+}
+
+export type TestApp = {
+  root: string
+  configFile: string
+  config: ResolvedConfig
+  remove: () => Promise<void>
+}
+
+// A temporary app built from the fixtures: the schema folder in `prisma/`, the migrations in
+// `prisma/migrations/`, and the eight queries in `src/data/queries/`. Its `sequel.config.ts`
+// is a plain object that imports nothing, and names the given databases directly.
+export async function createTestApp(databases: {
+  target?: string
+  test?: string
+  shadow?: string
+}): Promise<TestApp> {
+  const root = await mkdtemp(path.join(tmpdir(), 'sequel-app-'))
+  await cp(FIXTURE_SCHEMA, path.join(root, 'prisma'), { recursive: true })
+  await cp(FIXTURE_MIGRATIONS, path.join(root, 'prisma', 'migrations'), { recursive: true })
+  await cp(path.join(FIXTURES, 'queries'), path.join(root, 'src', 'data', 'queries'), {
+    recursive: true,
+  })
+  const object = {
+    schema: 'prisma',
+    migrations: 'prisma/migrations',
+    queries: 'src/**/queries',
+    databases,
+  }
+  const configFile = path.join(root, 'sequel.config.ts')
+  await writeFile(configFile, `export default ${JSON.stringify(object, null, 2)}\n`)
+  return {
+    root,
+    configFile,
+    config: resolveConfig(object, configFile),
+    remove: () => rm(root, { recursive: true, force: true }),
+  }
+}
+
+export const CLI = path.join(REPO, 'src', 'cli.ts')
+
+export type CliRun = { code: number; stdout: string; stderr: string }
+
+// Runs `sequel <args>` from source, in `cwd`.
+export function runCli(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliRun> {
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      [CLI, ...args],
+      { cwd, env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        resolve({ code: error === null ? 0 : (error.code as number), stdout, stderr })
+      },
+    )
   })
 }

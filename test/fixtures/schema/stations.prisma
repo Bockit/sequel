@@ -1,0 +1,72 @@
+enum AlertLevel {
+  info
+  warning
+  critical
+
+  @@map("alert_level")
+}
+
+enum DisplayTheme {
+  light
+  dark
+  highContrast @map("high-contrast")
+
+  @@map("display_theme")
+}
+
+model Region {
+  id       Int       @id @default(autoincrement())
+  parentId Int?      @map("parent_id")
+  name     String
+  parent   Region?   @relation("RegionTree", fields: [parentId], references: [id])
+  children Region[]  @relation("RegionTree")
+  stations Station[]
+
+  @@map("region")
+}
+
+model Station {
+  id            Int                   @id @default(autoincrement())
+  regionId      Int                   @map("region_id")
+  name          String
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  region        Region                @relation(fields: [regionId], references: [id])
+  alertConfig   StationAlertConfig?
+  displayConfig StationDisplayConfig?
+  syncConfig    StationSyncConfig?
+  dailyPeaks    DailyPeak[]
+  readings      Reading[]
+  documents     Document[]
+
+  @@map("station")
+}
+
+model StationAlertConfig {
+  id        Int        @id @default(autoincrement())
+  stationId Int        @unique @map("station_id")
+  enabled   Boolean    @default(true)
+  level     AlertLevel @default(warning)
+  station   Station    @relation(fields: [stationId], references: [id])
+
+  @@map("station_alert_config")
+}
+
+model StationDisplayConfig {
+  id        Int          @id @default(autoincrement())
+  stationId Int          @unique @map("station_id")
+  theme     DisplayTheme @default(light)
+  compact   Boolean      @default(false)
+  station   Station      @relation(fields: [stationId], references: [id])
+
+  @@map("station_display_config")
+}
+
+model StationSyncConfig {
+  id              Int     @id @default(autoincrement())
+  stationId       Int     @unique @map("station_id")
+  intervalMinutes Int     @map("interval_minutes")
+  station         Station @relation(fields: [stationId], references: [id])
+
+  @@map("station_sync_config")
+}

@@ -1,7 +1,7 @@
-import { randomBytes } from 'node:crypto'
-import { glob, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { glob, readdir, readFile, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { SequelError } from '../errors.ts'
+import { writeAtomically } from '../files.ts'
 
 // R11: the first line of every generated module. sequel recognises its modules, and their
 // orphans, by it (TECH-SPEC §9).
@@ -134,21 +134,6 @@ async function readIfExists(file: string): Promise<string | undefined> {
     return await readFile(file, 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-    throw error
-  }
-}
-
-// Writes beside the target, then renames over it, so a reader never sees half a module.
-async function writeAtomically(file: string, contents: string): Promise<void> {
-  const temporary = path.join(
-    path.dirname(file),
-    `.${path.basename(file)}.${randomBytes(6).toString('hex')}.tmp`,
-  )
-  try {
-    await writeFile(temporary, contents)
-    await rename(temporary, file)
-  } catch (error) {
-    await rm(temporary, { force: true })
     throw error
   }
 }

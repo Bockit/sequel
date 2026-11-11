@@ -1,0 +1,12 @@
+// Extras in the migrations: the vector extension, for the embedding column, and an HNSW index
+// on it (vector_cosine_ops), declared here as a plain @@index of the same name and column.
+model Document {
+  id        Int                       @id @default(autoincrement())
+  stationId Int                       @map("station_id")
+  title     String
+  embedding Unsupported("vector(3)")?
+  station   Station                   @relation(fields: [stationId], references: [id])
+
+  @@index([embedding])
+  @@map("document")
+}
