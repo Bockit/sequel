@@ -149,15 +149,17 @@ scripts/         maintenance, such as mirroring binaries; not published
 ### Lint
   - **Squawk config:** the app's `.squawk.toml` if it has one; otherwise sequel's default:
     - `pg_version` 18;
-    - excludes `prefer-bigint-over-int` and `prefer-identity`, which fire on Prisma's own output (`Int` is `INTEGER`, `autoincrement()` is `SERIAL`);
-    - excludes the timeout-settings rules, because the runner sets the timeouts.
+    - excludes `prefer-bigint-over-int`, `prefer-identity` and `require-enum-value-ordering`, which fire on Prisma's own output (`Int` is `INTEGER`, `autoincrement()` is `SERIAL`, and a new enum value is a bare `ADD VALUE`);
+    - excludes the timeout-settings rules, `require-lock-timeout` and `require-statement-timeout`, because the runner sets the timeouts.
   - **Transactions:** transactional files are linted with `--assume-in-transaction`, and no-transaction files without it.
   - **Cut-over:** files at or before the configured cut-over are not linted. They are already applied, and their checksums are fixed.
   - **Suppression:** Squawk's inline ignore comment, with the reason on the same line or the one above.
   - **Our own rules,** run on the same files:
     - an enum value that is added and then referenced later in the same file;
     - a no-transaction file with more than one statement;
-    - a no-transaction marker after the first statement.
+    - a no-transaction marker after the first statement;
+    - a `CREATE INDEX` with no `USING` on a column the schema folder declares as `Unsupported(…)`, because Prisma's diff writes one for a newly declared index and Postgres would build it as btree. Writing the method, even `USING btree`, satisfies it;
+    - a concurrent index build in a transactional file, because Squawk flags one only after an explicit `BEGIN`, not under `--assume-in-transaction`, and Postgres would refuse it at deploy.
 
 ### The runner
   - **The run:**
@@ -168,7 +170,8 @@ scripts/         maintenance, such as mirroring binaries; not published
     - a `_prisma_migrations` table with no `sequel_migrations` beside it: refused, naming `migrate adopt-prisma`;
     - every applied file's sha256 against the file on disk;
     - the out-of-order check;
-    - the missing-file check.
+    - the missing-file check;
+    - a pending no-transaction file with more than one statement.
     - Any refusal means nothing is applied.
   - **A transactional file:**
     1. `BEGIN`;
@@ -202,6 +205,7 @@ scripts/         maintenance, such as mirroring binaries; not published
 
 ### Drift
   - Drift is the engine's diff from a shadow database, with the migrations replayed into it by the runner, to the schema folder.
+  - An index whose method the schema language has no type for, such as pgvector's `hnsw`, is declared in the schema as a plain `@@index` with the same name and columns. Its migration is written by hand with the real method and operator class, and the extras snapshot records it. The engine matches indexes by name and columns and ignores an access method it can't type, so the declaration gives no drift, while a conflicting declared type does.
   - `check` fails on any drift. There is no allow-list, because the schema and the migrations always agree (§15).
 
 ### Shadow databases (`src/db/`)
