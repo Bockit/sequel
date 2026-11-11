@@ -1,11 +1,15 @@
 {
   "name": "@bockit/sequel",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "One CLI for a TypeScript app's Postgres data layer: Prisma schema, reviewed SQL migrations, typed SQL queries.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Bockit/sequel.git"
+  },
+  "homepage": "https://github.com/Bockit/sequel#readme",
+  "bugs": {
+    "url": "https://github.com/Bockit/sequel/issues"
   },
   "type": "module",
   "engines": {
@@ -41,5 +45,8 @@
     "@types/pg": "8.23.1",
     "prettier": "3.9.10",
     "typescript": "7.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
