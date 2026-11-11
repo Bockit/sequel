@@ -87,6 +87,58 @@ describe('sequel', () => {
     })
   }
 
+  // External migrations: the commands that act on the schema, the migrations or the snapshot
+  // refuse before anything else, so the app needs no schema folder, migrations or databases.
+  const disabled: string[][] = [
+    ['validate'],
+    ['format'],
+    ['migrate', 'new', 'add_accounts'],
+    ['migrate', 'lint'],
+    ['migrate', 'lint', 'nowhere.sql'],
+    ['migrate', 'adopt-prisma'],
+    ['migrate', 'deploy'],
+    ['extras'],
+  ]
+  for (const args of disabled) {
+    it(`refuses \`sequel ${args.join(' ')}\` with external migrations, naming the setting`, async () => {
+      const cwd = await mkdtemp(path.join(tmpdir(), 'sequel-cli-'))
+      try {
+        await writeFile(
+          path.join(cwd, 'sequel.config.ts'),
+          'export default { externalMigrations: true, databases: {} }\n',
+        )
+        const name = args.filter((arg) => !arg.includes('.') && arg !== 'add_accounts').join(' ')
+        assert.deepEqual(await sequel(cwd, ...args), {
+          code: 1,
+          stdout: '',
+          stderr: `\`sequel ${name}\` is off: sequel.config.ts sets \`externalMigrations\`, so another tool manages this app's schema and migrations, and sequel only types its queries. To have sequel manage them, remove \`externalMigrations\`.\n`,
+        })
+      } finally {
+        await rm(cwd, { recursive: true, force: true })
+      }
+    })
+  }
+
+  for (const args of [['generate'], ['generate', '--watch'], ['check']]) {
+    it(`still needs the test database for \`sequel ${args.join(' ')}\` with external migrations`, async () => {
+      const cwd = await mkdtemp(path.join(tmpdir(), 'sequel-cli-'))
+      try {
+        await writeFile(
+          path.join(cwd, 'sequel.config.ts'),
+          'export default { externalMigrations: true, databases: {} }\n',
+        )
+        assert.deepEqual(await sequel(cwd, ...args), {
+          code: 1,
+          stdout: '',
+          stderr:
+            'sequel.config.ts: `databases.test` is not set. Set the environment variable the config reads it from.\n',
+        })
+      } finally {
+        await rm(cwd, { recursive: true, force: true })
+      }
+    })
+  }
+
   const usageErrors: [string[], RegExp][] = [
     [['nope'], /^Unknown command `nope`\.\nRun `sequel --help` for usage\.\n$/],
     [['migrate'], /^migrate needs a subcommand: new, lint, adopt-prisma or deploy\./],

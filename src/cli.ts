@@ -30,6 +30,8 @@ import { unsupportedColumns } from './schema/unsupported.ts'
 type Flag = 'watch' | 'allow-out-of-order'
 
 type Context = {
+  // The command, such as `migrate deploy`.
+  name: string
   // The file `--config` names, if any. Commands load it with `loadConfig`.
   config: string | undefined
   positionals: string[]
@@ -53,7 +55,7 @@ const OPTIONS = {
 } as const
 
 async function validate(context: Context): Promise<void> {
-  const config = await load(context)
+  const config = await loadManaged(context)
   const files = await readSchemaFiles(config.schema, config.root)
   assertValidSchema(files, config.root)
   for (const warning of schemaWarnings(files, config.root)) {
@@ -63,7 +65,7 @@ async function validate(context: Context): Promise<void> {
 }
 
 async function format(context: Context): Promise<void> {
-  const config = await load(context)
+  const config = await loadManaged(context)
   const changed = await formatSchemaFiles(
     await readSchemaFiles(config.schema, config.root),
     config.root,
@@ -73,7 +75,7 @@ async function format(context: Context): Promise<void> {
 }
 
 async function migrateNew(context: Context): Promise<void> {
-  const config = await load(context)
+  const config = await loadManaged(context)
   const { file, findings } = await newMigration({ config, name: context.positionals[0] as string })
   if (file === undefined) {
     out('The migrations already match the schema: no migration written.')
@@ -89,7 +91,7 @@ async function migrateNew(context: Context): Promise<void> {
 }
 
 async function migrateLint(context: Context): Promise<void> {
-  const config = await load(context)
+  const config = await loadManaged(context)
   const migrations =
     context.positionals.length > 0
       ? await Promise.all(
@@ -119,7 +121,7 @@ async function migrateLint(context: Context): Promise<void> {
 }
 
 async function migrateAdoptPrisma(context: Context): Promise<void> {
-  const config = await load(context)
+  const config = await loadManaged(context)
   const url = requireDatabase(config, 'target')
   const files = await adoptPrismaFiles(config.migrations, config.root)
   for (const { from, to } of files.renamed) {
@@ -151,7 +153,7 @@ async function migrateAdoptPrisma(context: Context): Promise<void> {
 }
 
 async function migrateDeploy(context: Context): Promise<void> {
-  const config = await load(context)
+  const config = await loadManaged(context)
   await deployTo(config, requireDatabase(config, 'target'), {
     allowOutOfOrder: context.flags['allow-out-of-order'],
     log: out,
@@ -162,7 +164,10 @@ async function generate(context: Context): Promise<void> {
   const config = await load(context)
   const url = requireDatabase(config, 'test')
   const once = async () => {
-    await deployTo(config, url, { log: out, quietWhenCurrent: true })
+    // With external migrations, the test database is typed as the other tool left it.
+    if (!config.externalMigrations) {
+      await deployTo(config, url, { log: out, quietWhenCurrent: true })
+    }
     const folders = await findQueryFolders(config.queries)
     const result = await generateModules({
       sqlc: await ensureBinary('sqlc'),
@@ -185,7 +190,8 @@ async function generate(context: Context): Promise<void> {
   const stop = new AbortController()
   process.once('SIGINT', () => stop.abort())
   process.once('SIGTERM', () => stop.abort())
-  const folders = [...(await findQueryFolders(config.queries)), config.migrations]
+  const folders = await findQueryFolders(config.queries)
+  if (!config.externalMigrations) folders.push(config.migrations)
   await watchAndRerun({
     folders,
     run: once,
@@ -195,7 +201,7 @@ async function generate(context: Context): Promise<void> {
 }
 
 async function extras(context: Context): Promise<void> {
-  const config = await load(context)
+  const config = await loadManaged(context)
   const url = requireDatabase(config, 'test')
   await deployTo(config, url, { log: out, quietWhenCurrent: true })
   const next = await readExtrasSnapshot(url)
@@ -218,6 +224,18 @@ async function check(context: Context): Promise<void> {
 
 function load(context: Context): Promise<ResolvedConfig> {
   return loadConfig({ config: context.config })
+}
+
+// For the commands that act on the schema, the migrations or the extras snapshot: they refuse
+// when another tool manages them, before connecting, reading a file or fetching a binary.
+async function loadManaged(context: Context): Promise<ResolvedConfig> {
+  const config = await load(context)
+  if (config.externalMigrations) {
+    throw new SequelError(
+      `\`sequel ${context.name}\` is off: ${path.basename(config.configFile)} sets \`externalMigrations\`, so another tool manages this app's schema and migrations, and sequel only types its queries. To have sequel manage them, remove \`externalMigrations\`.`,
+    )
+  }
+  return config
 }
 
 function shown(config: ResolvedConfig, file: string): string {
@@ -356,6 +374,7 @@ async function main(argv: string[]): Promise<void> {
   }
 
   await command.run({
+    name,
     config: values.config,
     positionals: args,
     flags: {

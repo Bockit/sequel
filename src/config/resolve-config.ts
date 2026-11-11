@@ -16,6 +16,7 @@ export type ResolvedConfig = {
   timeouts: { lockMs: number; statementMs: number }
   lint: { cutover: string | undefined }
   types: { bigint: BigintMode }
+  externalMigrations: boolean
 }
 
 export const DEFAULTS = {
@@ -28,7 +29,17 @@ export const DEFAULTS = {
 } as const
 
 const KEYS: Record<string, readonly string[]> = {
-  '': ['schema', 'migrations', 'queries', 'snapshot', 'databases', 'timeouts', 'lint', 'types'],
+  '': [
+    'schema',
+    'migrations',
+    'queries',
+    'snapshot',
+    'databases',
+    'timeouts',
+    'lint',
+    'types',
+    'externalMigrations',
+  ],
   databases: ['target', 'test', 'shadow'],
   timeouts: ['lockMs', 'statementMs'],
   lint: ['cutover'],
@@ -99,6 +110,14 @@ export function resolveConfig(value: unknown, configFile: string): ResolvedConfi
     fail('types.bigint', `must be one of ${BIGINT_MODES.map((m) => `'${m}'`).join(', ')}.`)
   }
 
+  const external = config.externalMigrations ?? false
+  if (typeof external !== 'boolean') {
+    fail(
+      'externalMigrations',
+      'must be `true` or `false`: `true` when another tool manages the schema and migrations.',
+    )
+  }
+
   return {
     configFile,
     root,
@@ -115,6 +134,7 @@ export function resolveConfig(value: unknown, configFile: string): ResolvedConfi
     },
     lint: { cutover: cutover as string | undefined },
     types: { bigint: bigint as BigintMode },
+    externalMigrations: external as boolean,
   }
 }
 

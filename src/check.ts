@@ -18,21 +18,15 @@ export type CheckFailure = { problem: string; details: string[]; fix: string }
 // SPEC §3's `check`: brings the test database up to the latest migration, then runs every check
 // and returns every failure, in SPEC's order. It writes no files. A check that can't run because
 // an earlier one failed (drift needs a valid schema, say) is skipped, and the earlier failure
-// says why.
+// says why. With external migrations it checks only the generated modules (SPEC §2).
 export async function runChecks(
   config: ResolvedConfig,
   log: (message: string) => void,
 ): Promise<CheckFailure[]> {
   const testUrl = requireDatabase(config, 'test')
-  const shown = (file: string) => path.relative(config.root, file)
   const failures: { order: number; failure: CheckFailure }[] = []
   const fail = (order: number, failure: CheckFailure) => failures.push({ order, failure })
-  const expected = async <T>(
-    order: number,
-    problem: string,
-    fix: string,
-    body: () => Promise<T>,
-  ) => {
+  const expected: Expected = async (order, problem, fix, body) => {
     try {
       return await body()
     } catch (error) {
@@ -41,6 +35,18 @@ export async function runChecks(
       return undefined
     }
   }
+
+  // With external migrations, the test database is as the other tool left it, and only the
+  // generated modules are checked. The skip is said, never silent.
+  if (config.externalMigrations) {
+    log(
+      `Skipped drift, lint, the extras snapshot and schema validation: this app's migrations are managed elsewhere (\`externalMigrations\` in ${path.basename(config.configFile)}).`,
+    )
+    await checkGeneratedModules(config, testUrl, expected, (failure) => fail(1, failure))
+    return failures.map((entry) => entry.failure)
+  }
+
+  const shown = (file: string) => path.relative(config.root, file)
 
   // The schema folder.
   const files = await expected<SchemaFile[]>(
@@ -82,35 +88,8 @@ export async function runChecks(
     )) === true
 
   // 1. Generated modules.
-  if (deployed) {
-    const modules = await expected(
-      1,
-      "The query modules can't be generated",
-      'Fix the queries named. `sequel generate` reports the same errors.',
-      async () =>
-        checkModules({
-          sqlc: await ensureBinary('sqlc'),
-          databaseUrl: testUrl,
-          folders: await findQueryFolders(config.queries),
-          bigint: config.types.bigint,
-          root: config.root,
-        }),
-    )
-    if (modules !== undefined) {
-      const details = [
-        ...modules.stale.map((file) => `stale: ${shown(file)}`),
-        ...modules.missing.map((file) => `missing: ${shown(file)}`),
-        ...modules.orphaned.map((file) => `orphaned: ${shown(file)} (its query file is gone)`),
-      ]
-      if (details.length > 0) {
-        fail(1, {
-          problem: 'Generated modules are out of date',
-          details,
-          fix: 'Run `sequel generate`, and commit the result.',
-        })
-      }
-    }
-  }
+  if (deployed)
+    await checkGeneratedModules(config, testUrl, expected, (failure) => fail(1, failure))
 
   // 2. Drift.
   if (migrations !== undefined && files !== undefined && schemaValid) {
@@ -170,6 +149,50 @@ export async function runChecks(
   }
 
   return failures.sort((a, b) => a.order - b.order).map((entry) => entry.failure)
+}
+
+type Expected = <T>(
+  order: number,
+  problem: string,
+  fix: string,
+  body: () => Promise<T>,
+) => Promise<T | undefined>
+
+// Generates the modules as `generate` would, against the test database as it stands, and
+// compares them with the modules in place: stale, missing or orphaned.
+async function checkGeneratedModules(
+  config: ResolvedConfig,
+  testUrl: string,
+  expected: Expected,
+  fail: (failure: CheckFailure) => void,
+): Promise<void> {
+  const shown = (file: string) => path.relative(config.root, file)
+  const modules = await expected(
+    1,
+    "The query modules can't be generated",
+    'Fix the queries named. `sequel generate` reports the same errors.',
+    async () =>
+      checkModules({
+        sqlc: await ensureBinary('sqlc'),
+        databaseUrl: testUrl,
+        folders: await findQueryFolders(config.queries),
+        bigint: config.types.bigint,
+        root: config.root,
+      }),
+  )
+  if (modules === undefined) return
+  const details = [
+    ...modules.stale.map((file) => `stale: ${shown(file)}`),
+    ...modules.missing.map((file) => `missing: ${shown(file)}`),
+    ...modules.orphaned.map((file) => `orphaned: ${shown(file)} (its query file is gone)`),
+  ]
+  if (details.length > 0) {
+    fail({
+      problem: 'Generated modules are out of date',
+      details,
+      fix: 'Run `sequel generate`, and commit the result.',
+    })
+  }
 }
 
 // The lines that differ, from a longest-common-subsequence diff: `-` for the snapshot as

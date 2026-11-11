@@ -1,0 +1,45 @@
+// A reading list, written for sequel's tests: an app whose schema and migrations another tool
+// manages, in Prisma 6's shape. The datasource has a `url`, which sequel's Prisma 7 rejects,
+// and the migrations are folders of `migration.sql`. With `externalMigrations`, sequel reads
+// neither.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BookStatus {
+  wanted
+  reading
+  finished
+  archived
+
+  @@map("book_status")
+}
+
+model Reader {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  books     Book[]
+
+  @@map("reader")
+}
+
+model Book {
+  id        String     @id @default(cuid())
+  readerId  String?    @map("reader_id")
+  title     String
+  pages     Int?
+  status    BookStatus @default(wanted)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  reader    Reader?    @relation(fields: [readerId], references: [id], onDelete: SetNull)
+
+  @@unique([readerId, title])
+  @@map("book")
+}

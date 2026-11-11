@@ -158,14 +158,50 @@ Collations, CHECKs, partial and expression indexes, vector and trigram indexes, 
 - live in hand-written migration SQL, noted in a comment on their model;
 - appear in the committed extras snapshot, so a change to them shows in review.
 
+### Migrations managed by another tool
+
+If another tool manages your schema and migrations, set `externalMigrations: true`. sequel then only types your queries:
+
+```ts
+export default defineConfig({
+  externalMigrations: true,
+  queries: 'src/**/queries',
+  databases: { test: process.env.TEST_DATABASE_URL },
+})
+```
+
+- `generate` types queries against the test database as your other tool left it. It never migrates it, and that tool's history table there, such as `_prisma_migrations`, is fine. Migrate the test database with your tool first.
+- `check` checks only the generated modules: stale, missing or orphaned. It prints a line saying it skipped drift, lint, the extras snapshot and schema validation.
+- `generate --watch` watches only the query folders.
+- No schema folder or migrations are read, so `schema`, `migrations` and `snapshot` aren't needed, and are ignored if set. Only sqlc is fetched; `pg_dump` is still needed.
+- `validate`, `format`, `migrate …` and `extras` refuse, naming the setting.
+
+Remove the setting to have sequel manage the schema and migrations.
+
 ## Adopting sequel in a Prisma app
 
+Move queries first, and decide about migrations last. Prisma keeps the schema, the migrations and `@prisma/client` while you port, and the app runs on both in the meantime.
+
+### Queries first
+
+1. Write `sequel.config.ts` with `externalMigrations: true` (see [above](#migrations-managed-by-another-tool)). The schema stays as it is, `url` included, and Prisma keeps migrating every database, the test database too.
+2. Move queries to `.sql` files module by module, porting modules that share a transaction together. Run `sequel generate`, and add `sequel check` to your test script and CI.
+3. Hand-written SQL now does what Prisma Client did for you:
+   - **`@updatedAt`:** Prisma Client sets it on every create and update, and the column has no database default. Set `updated_at = now()` in every `INSERT` and `UPDATE`.
+   - **`@default(cuid())` and `@default(uuid())`:** Prisma Client makes the id, and the column has no database default. Your app supplies it as a parameter.
+   - **A missing row:** Prisma's `update` and `delete` throw `P2025`. A `:one` query returns `null`, and an `:execrows` query returns `0`, so check for them.
+   - **Unique violations:** Prisma's `P2002` is now `pg`'s error with `code` `'23505'`.
+   - **Nested writes and `$transaction([...])`:** Prisma ran these in a transaction implicitly. Now take a client from the pool, run `BEGIN`, pass that client to every query in the transaction, and `COMMIT` (or `ROLLBACK` on error).
+4. When the last query is ported, remove `@prisma/client` and the schema's `generator` block. Prisma's CLI still runs the migrations.
+
+### Then migrations, if sequel is to run them
+
 1. Split `schema.prisma` into a folder, and remove `url` from the `datasource` block.
-2. Write `sequel.config.ts`. Set the lint cut-over to your newest existing migration.
+2. In `sequel.config.ts`, remove `externalMigrations`, and set `schema`, `migrations`, `snapshot` and the target database. Set the lint cut-over to your newest existing migration.
 3. Run `sequel migrate adopt-prisma` and commit the renamed files. Their contents don't change, so their checksums still match.
 4. Run `sequel migrate adopt-prisma` once against every database: production, each developer's, and the test database. It creates sequel's history from `_prisma_migrations`, checking every checksum, and leaves that table untouched. Until then, `deploy` refuses that database.
 5. Run `sequel extras`, and commit the snapshot.
-6. Move queries to `.sql` files module by module, porting modules that share a transaction together. Then remove `@prisma/client`, `prisma` and their install hooks.
+6. Remove `prisma` and its install hooks.
 7. In VS Code's Prisma extension, which still formats and validates offline, turn off the "Generate" CodeLens and the Prisma Client file watcher.
 
 ## Status

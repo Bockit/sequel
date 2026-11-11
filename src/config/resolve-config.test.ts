@@ -18,7 +18,15 @@ describe('resolveConfig', () => {
       timeouts: { lockMs: 5_000, statementMs: 60_000 },
       lint: { cutover: undefined },
       types: { bigint: 'string' },
+      externalMigrations: false,
     })
+  })
+
+  it('takes externalMigrations, with the folder keys still allowed beside it', () => {
+    const config = resolveConfig({ externalMigrations: true, migrations: 'db/migrations' }, FILE)
+    assert.equal(config.externalMigrations, true)
+    assert.equal(config.migrations, '/apps/shop/db/migrations')
+    assert.equal(resolveConfig({ externalMigrations: false }, FILE).externalMigrations, false)
   })
 
   it('resolves every given path relative to the config file', () => {
@@ -103,6 +111,11 @@ describe('resolveConfig', () => {
     ['a zero timeout', { timeouts: { lockMs: 0 } }, /`timeouts\.lockMs` must be a positive whole/],
     ['a fractional timeout', { timeouts: { statementMs: 1.5 } }, /`timeouts\.statementMs`/],
     ['a cut-over that is not an identity', { lint: { cutover: '2025-01-01' } }, /`lint\.cutover`/],
+    [
+      'a non-boolean externalMigrations',
+      { externalMigrations: 'prisma' },
+      /`externalMigrations` must be `true` or `false`/,
+    ],
     ['an unknown bigint mode', { types: { bigint: 'int' } }, /`types\.bigint` must be one of/],
   ]
   for (const [what, value, message] of rejects) {

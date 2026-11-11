@@ -37,6 +37,11 @@ export type SequelConfig = {
     // with another, the app configures `pg`'s parser for type 20 to match.
     bigint?: BigintMode
   }
+  // Set when another tool manages this app's schema and migrations, so sequel only types its
+  // queries: it never migrates the test database, reads no schema folder or migrations, and
+  // refuses the commands that act on them. `schema`, `migrations` and `snapshot` are then
+  // optional and ignored.
+  externalMigrations?: boolean
 }
 
 export type BigintMode = 'string' | 'number' | 'bigint'
