@@ -17,7 +17,7 @@
   - Built on these tools, pinned as §5 describes:
     - Prisma's schema WASM (vendored);
     - Prisma's native schema engine;
-    - sqlc, with its database analyzer;
+    - sqlc, built from our fork of it, with its database analyzer;
     - Squawk.
 
 ## 2. Project Structure
@@ -73,14 +73,14 @@ scripts/         maintenance, such as mirroring binaries; not published
     - the sha256 of the asset, and of the executable inside it.
   - **Pins:**
     - **Prisma schema engine and schema WASM:** engine `8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8`, the engine behind Prisma 7.10.1, using the Prisma 7 schema dialect.
-    - **sqlc** v1.31.1.
+    - **sqlc** v1.31.1-sequel.1: sqlc v1.31.1 with six fixes to its query analysis, built from the `sequel` branch of our fork, `Bockit/sqlc`. The branch's `SEQUEL.md` lists the fixes and gives the build command.
     - **Squawk** 2.71.0.
   - **Lockstep:** the schema engine and the schema WASM are always the same engine commit, and a test fails otherwise.
   - **Platforms:** darwin-arm64, linux-x64 and linux-arm64, each mapped in the manifest to every tool's own platform name. Any other platform fails with a message listing the supported ones.
     - The schema engine's Linux builds are Prisma's static ones, `linux-static-x64` and `linux-static-arm64`: one asset per architecture with OpenSSL linked in, so there is no libc or OpenSSL detection.
   - **Sources:**
     - the engine from `https://binaries.prisma.sh/all_commits/<engine-hash>/<platform>/schema-engine.gz`;
-    - sqlc and Squawk from their GitHub releases;
+    - sqlc from the GitHub releases of `Bockit/sqlc`, and Squawk from its own GitHub releases;
     - mirrors of all three as release assets on `Bockit/sequel`.
   - **Fetching:**
     - On first use, never at install.
@@ -96,6 +96,7 @@ scripts/         maintenance, such as mirroring binaries; not published
     - One commit changes the manifest (and, for the engine, the vendored WASM), after the acceptance tests pass on every platform.
     - Mirror assets are uploaded by `scripts/mirror-binaries.ts`, which James runs. It checks each upstream asset against upstream's published checksum and against the manifest before uploading.
     - Upstream's published checksum is Prisma's `.sha256` file for the engine. sqlc and Squawk publish no checksum files, so for them it is the sha256 digest GitHub records for the release asset.
+    - The sqlc assets are our own builds, so GitHub's digest only shows that an upload arrived intact. The build is reproducible, so before a sqlc pin changes, each executable's sha256 is also checked by rebuilding it from the fork's tag with the Go version and flags in `SEQUEL.md`.
     - Mirror releases are pre-releases, so a binaries release never becomes the repo's Latest.
 
 ## 6. Schema WASM (`src/schema/`, `vendor/prisma-schema-wasm/`)
@@ -293,11 +294,12 @@ scripts/         maintenance, such as mirroring binaries; not published
 
   - **Our code is Apache-2.0:** `LICENSE` at the root, and `"license": "Apache-2.0"` in `package.json`.
   - **Vendored:** `vendor/prisma-schema-wasm/LICENSE`, which is Apache-2.0 and copied from `prisma/prisma-engines` (which has no NOTICE file), plus its README giving the source, version and changes.
-  - **`THIRD_PARTY_NOTICES.md`** gives, for each binary sequel fetches or mirrors (the Prisma schema engine, Apache-2.0; sqlc, MIT; Squawk, Apache-2.0):
+  - **`THIRD_PARTY_NOTICES.md`** gives, for each binary sequel fetches or mirrors (the Prisma schema engine, Apache-2.0; sqlc, MIT, built from our fork; Squawk, Apache-2.0):
     - name, version and source;
     - licence and copyright;
     - the full licence text where the licence requires it.
     - Every release that mirrors binaries attaches the file.
+  - For sqlc, the source is the fork and its tag, and the entry says the build is modified and where its changes are listed.
   - **`pg`** (MIT) is an npm dependency and carries its own licence.
 
 ## 13. Testing
@@ -364,6 +366,7 @@ scripts/         maintenance, such as mirroring binaries; not published
       - the DSL can't express row locks, upserts with expressions, CTEs, window functions or vector search.
   - **SQL files, not a query builder.** Kysely typed every spike query correctly, but its mechanism is a builder, not SQL.
   - **sqlc, not Prisma TypedSQL or PgTyped.** Both of those take nullability from a column's source table, because Postgres's describe doesn't report outer joins, so they type left-joined columns as never null. sqlc parses the query and sees the join.
+  - **A fork of sqlc, not only corrections in the generator.** sqlc v1.31.1 loses outer-join nullability on a `WITH` nested in a statement, on an outer-joined subquery, and on a join nested under an outer join. The generator sees only sqlc's answer and the query text, so it can't recover what sqlc's own analysis has. The fixes are small, so the fork is v1.31.1 plus those fixes, moved onto each sqlc release we adopt, until upstream has them.
   - **A process plugin, not a WASM one:** no Javy toolchain, and three fewer licences.
   - **The native schema engine, not its WASM build.** The WASM engine needs a Prisma driver adapter even for a schema-only diff, and failed to introspect a live database.
   - **Prisma 7, not Prisma 8.** Prisma 8 is a TypeScript rewrite:

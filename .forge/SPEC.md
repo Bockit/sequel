@@ -204,7 +204,7 @@ With external migrations (§2), `check` needs only the test database. `validate`
   - A comment on a query asserts that a column, or the elements of an array column, are never null where sequel can't prove it.
   - **Known limits:**
     - a cast is reported as never null. A nullable expression is not cast, and a cast is not a way to assert never null;
-    - a comparison or arithmetic with a nullable operand, `nullif`, a column from a lateral outer join, a scalar subquery around a plain column, and `CASE … THEN NULL` can be typed as never null when they can be null.
+    - a comparison or arithmetic with a nullable operand, `nullif`, a `UNION` column that only a later branch can make null, and `CASE … THEN NULL` can be typed as never null when they can be null.
   - **Values are typed as the node-postgres driver returns them by default:**
     - text, `uuid`, `time`, `money` and similar types → `string`;
     - `smallint`, `integer`, `real` and `double precision` → `number`;
