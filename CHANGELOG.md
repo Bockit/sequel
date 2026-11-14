@@ -2,6 +2,26 @@
 
 What changed in each release of `@bockit/sequel`, for an app using it, and anything the app must do to upgrade. Newest first.
 
+## 0.3.0
+
+### Fixed
+
+- sequel's sqlc is now a build of [our fork of it](https://github.com/Bockit/sqlc/blob/sequel/SEQUEL.md): sqlc v1.31.1 with six fixes to how it analyses a query. Four query shapes were typed as never null where Postgres returns null, and are now typed `T | null`:
+  - a column of an outer-joined subquery, `LEFT JOIN (SELECT …) s`, or of `LEFT JOIN LATERAL`;
+  - a column of a table joined before a `RIGHT JOIN` or `FULL JOIN`, or of a parenthesised join on the nullable side of a `LEFT JOIN`;
+  - a scalar subquery in the select list, `(SELECT name FROM … WHERE …)`, which is null when it finds no row. One over a count, such as `(SELECT count(*)::int …)`, is still never null;
+  - a column from the nullable side of an outer join, in a statement with a `WITH` nested in a subquery or CTE.
+- A statement with a nested `WITH` and a `*` generates. Before, `generate` failed with Postgres's error for an unbound parameter, such as `operator does not exist: @ text`, or with `star expansion failed for query`.
+- When sqlc can't analyse a query, it describes the query from the database alone, which ignores outer joins. sequel now types every column of such a query as `T | null` unless it can prove otherwise.
+- `generate` refuses a query whose text sqlc left a `@name` or `sqlc.arg(…)` in, naming the query. Postgres would read `@name` as its `@` operator.
+
+### Upgrading
+
+- Run `sequel generate`, and commit the modules it changes. sequel fetches the new sqlc on first use. `sequel check` fails until the modules are current.
+- A query with none of the shapes above regenerates byte for byte.
+- Where a column gained `| null`, TypeScript reports the code that assumed a value. Each is a place the query could already return null: handle the null, or change the query.
+- Where you know a column is never null and sequel can't prove it, assert it with `-- @notnull <column>` on the query.
+
 ## 0.2.1
 
 ### Fixed
