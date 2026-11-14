@@ -222,7 +222,9 @@ sequel is licensed under the [Apache License 2.0](LICENSE).
 
 It uses, without modification:
 - Prisma's schema WASM, vendored in `vendor/prisma-schema-wasm/` under Apache-2.0;
-- Prisma's schema engine (Apache-2.0), sqlc (MIT) and Squawk (Apache-2.0), fetched as pinned binaries and mirrored in this repository's releases;
+- Prisma's schema engine (Apache-2.0) and Squawk (Apache-2.0), fetched as pinned binaries and mirrored in this repository's releases;
 - `pg` (MIT), as an npm dependency.
+
+It also uses sqlc (MIT), built from [our fork of it](https://github.com/Bockit/sqlc/blob/sequel/SEQUEL.md), which adds six fixes to sqlc's query analysis. It is fetched and mirrored the same way.
 
 See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

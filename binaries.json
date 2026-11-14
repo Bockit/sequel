@@ -1,38 +1,38 @@
 {
   "tools": {
     "sqlc": {
-      "version": "1.31.1",
+      "version": "1.31.1-sequel.1",
       "executable": "sqlc",
       "platforms": {
         "darwin-arm64": {
           "platform": "darwin_arm64",
-          "asset": "sqlc_1.31.1_darwin_arm64.tar.gz",
+          "asset": "sqlc_1.31.1-sequel.1_darwin_arm64.tar.gz",
           "archive": "tar.gz",
           "member": "sqlc",
-          "upstream": "https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_darwin_arm64.tar.gz",
-          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1/sqlc_1.31.1_darwin_arm64.tar.gz",
-          "assetSha256": "21602158c99eb1f2bae197a66abfb1941d1e9e50b23125bb193349c6b1acc71e",
-          "executableSha256": "7e63a8b2166f1103a2ad1d2e5d05d8fe3f13ca65ecf2774a2570b830d32055fd"
+          "upstream": "https://github.com/Bockit/sqlc/releases/download/v1.31.1-sequel.1/sqlc_1.31.1-sequel.1_darwin_arm64.tar.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1-sequel.1/sqlc_1.31.1-sequel.1_darwin_arm64.tar.gz",
+          "assetSha256": "32fa3250f0dd5356c2c1dc13c37d4b008749072838b3cd2583009423e628977f",
+          "executableSha256": "50b4bbf81426776ee0de3d55f18e43f5f99d5519edee4d3fe25d36deb3b152c3"
         },
         "linux-x64": {
           "platform": "linux_amd64",
-          "asset": "sqlc_1.31.1_linux_amd64.tar.gz",
+          "asset": "sqlc_1.31.1-sequel.1_linux_amd64.tar.gz",
           "archive": "tar.gz",
           "member": "sqlc",
-          "upstream": "https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_linux_amd64.tar.gz",
-          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1/sqlc_1.31.1_linux_amd64.tar.gz",
-          "assetSha256": "497ae4fcdfa64c5b0c311ffe4c2bd991e43991e82e5367792ed78bc2dca27354",
-          "executableSha256": "0496fbc18f603e2fbd10c752942d1389a1fa9bc3d18de7243ec00cccd611575f"
+          "upstream": "https://github.com/Bockit/sqlc/releases/download/v1.31.1-sequel.1/sqlc_1.31.1-sequel.1_linux_amd64.tar.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1-sequel.1/sqlc_1.31.1-sequel.1_linux_amd64.tar.gz",
+          "assetSha256": "476d41c950c9f1d6b20e3833ade4e0278e4f891ac99fef80934658f10dcdb2b3",
+          "executableSha256": "bd78b8fa29ed06d1ae59c5104c7e52bf4e174c0c3480fb210c411aacb3ff028a"
         },
         "linux-arm64": {
           "platform": "linux_arm64",
-          "asset": "sqlc_1.31.1_linux_arm64.tar.gz",
+          "asset": "sqlc_1.31.1-sequel.1_linux_arm64.tar.gz",
           "archive": "tar.gz",
           "member": "sqlc",
-          "upstream": "https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_linux_arm64.tar.gz",
-          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1/sqlc_1.31.1_linux_arm64.tar.gz",
-          "assetSha256": "b7cae247740d0c51a1e657479e5b2d21e6fef428f596682a01bc55bf4ab8a23d",
-          "executableSha256": "3b42bdbc5be1d534b95fc6b9f0e1572e6aa555fda3c96f208cb26abb1bb77d7e"
+          "upstream": "https://github.com/Bockit/sqlc/releases/download/v1.31.1-sequel.1/sqlc_1.31.1-sequel.1_linux_arm64.tar.gz",
+          "mirror": "https://github.com/Bockit/sequel/releases/download/bin-sqlc-1.31.1-sequel.1/sqlc_1.31.1-sequel.1_linux_arm64.tar.gz",
+          "assetSha256": "91d087c27117bcb6881442c2d6d4c178090d4b10432ace986cdc22dfb650508d",
+          "executableSha256": "bf30b38ade866e4b62b2b312a01cd4277a4ea3b030c6dac36e3106835b51ca10"
         }
       }
     },

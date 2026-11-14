@@ -157,7 +157,7 @@ async function main(): Promise<void> {
               '--title',
               `${tool} ${version} binaries`,
               '--notes',
-              `Unmodified ${tool} ${version} binaries, mirrored for sequel. Licences and sources: THIRD_PARTY_NOTICES.md.`,
+              `${tool} ${version} binaries, mirrored for sequel exactly as their source released them. Licences and sources: THIRD_PARTY_NOTICES.md.`,
             )
           }
           await gh('release', 'upload', tag, file, '--repo', REPO)

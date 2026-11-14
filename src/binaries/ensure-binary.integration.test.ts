@@ -9,9 +9,9 @@ const run = promisify(execFile)
 // Fetches the real pinned binaries for this platform into the real cache (`SEQUEL_CACHE_DIR`,
 // else the default), from the mirror or upstream, then runs each one.
 describe('pinned binaries', { timeout: 15 * 60_000 }, () => {
-  it('runs sqlc v1.31.1', async () => {
+  it('runs sqlc v1.31.1-sequel.1, our fork', async () => {
     const { stdout } = await run(await ensureBinary('sqlc'), ['version'])
-    assert.equal(stdout.trim(), 'v1.31.1')
+    assert.equal(stdout.trim(), 'v1.31.1-sequel.1')
   })
 
   it('runs Squawk 2.71.0', async () => {

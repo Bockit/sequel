@@ -1,6 +1,6 @@
 # Third-party notices
 
-sequel fetches, mirrors or vendors the tools below, unmodified. Each is a pinned version, verified against the sha256 recorded in `binaries.json` (or, for the vendored WASM, in `vendor/prisma-schema-wasm/README.md`). Each binary also contains its own dependencies, under the licences its upstream project lists.
+sequel fetches, mirrors or vendors the tools below. All are unmodified except sqlc, which is built from our fork of it, as its section says. Each is a pinned version, verified against the sha256 recorded in `binaries.json` (or, for the vendored WASM, in `vendor/prisma-schema-wasm/README.md`). Each binary also contains its own dependencies, under the licences its upstream project lists.
 
 `pg` (MIT) is an npm dependency of sequel and carries its own licence.
 
@@ -22,9 +22,9 @@ Vendored in `vendor/prisma-schema-wasm/`, built from the same engine commit.
 
 ## sqlc
 
-- **Version:** v1.31.1
-- **Source:** [`sqlc-dev/sqlc`](https://github.com/sqlc-dev/sqlc/tree/v1.31.1). Binaries from its [v1.31.1 release](https://github.com/sqlc-dev/sqlc/releases/tag/v1.31.1): `sqlc_1.31.1_darwin_arm64.tar.gz`, `sqlc_1.31.1_linux_amd64.tar.gz` and `sqlc_1.31.1_linux_arm64.tar.gz`.
-- **Licence:** MIT, whose full text follows, copied from its `LICENSE` at v1.31.1.
+- **Version:** v1.31.1-sequel.1
+- **Source:** [`Bockit/sqlc`](https://github.com/Bockit/sqlc/tree/v1.31.1-sequel.1), our fork of [`sqlc-dev/sqlc`](https://github.com/sqlc-dev/sqlc). It is a modified sqlc: v1.31.1 with six fixes to its query analysis, which the fork's [`SEQUEL.md`](https://github.com/Bockit/sqlc/blob/v1.31.1-sequel.1/SEQUEL.md) lists. Binaries from the fork's [v1.31.1-sequel.1 release](https://github.com/Bockit/sqlc/releases/tag/v1.31.1-sequel.1): `sqlc_1.31.1-sequel.1_darwin_arm64.tar.gz`, `sqlc_1.31.1-sequel.1_linux_amd64.tar.gz` and `sqlc_1.31.1-sequel.1_linux_arm64.tar.gz`.
+- **Licence:** MIT, whose full text follows, copied from its `LICENSE`, which the fork leaves as it is at v1.31.1.
 - **Copyright:** Copyright (c) 2024 Riza, Inc.
 
 ```

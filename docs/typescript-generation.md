@@ -33,7 +33,7 @@ Rules are numbered (**R1**, **R2**, …) so tests and reviews can cite them. Exa
 
 Every statement here about sqlc's input or `pg`'s values was observed, not inferred:
 
-- **sqlc v1.31.1**, darwin-arm64, run as sequel runs it (TECH-SPEC §9): `engine: postgresql`, the schema a `pg_dump --schema-only --no-owner --no-privileges` of a real database, `database.uri` set, `analyzer.database: true`, a `process` plugin with `format: json`.
+- **sqlc v1.31.1-sequel.1**, our fork of v1.31.1 (TECH-SPEC §5), darwin-arm64, run as sequel runs it (TECH-SPEC §9): `engine: postgresql`, the schema a `pg_dump --schema-only --no-owner --no-privileges` of a real database, `database.uri` set, `analyzer.database: true`, a `process` plugin with `format: json`.
 - **Postgres 18.6.**
 - **`pg` with `pg-types` 2.2.0**, the default type parsers, `rowMode: 'array'`. The repo pins `pg` 8.23.1. Appendix B was measured on 8.22, which uses the same `pg-types`, and its array and scalar results were spot-checked on 8.23.1. The type mapping (§12) describes these parsers. A change of `pg` major version means re-measuring Appendix B.
 
@@ -552,8 +552,6 @@ SELECT max(created_at) AS latest, array_agg(title) AS titles FROM task;
 **R66. Known limits.** The generator doesn't correct these. Each is reported as never null, and can be null, so the type can lie:
 - `a = b`, `a < b`, `x IN (…)` and `a + 1` with a nullable operand;
 - `nullif(a, b)`;
-- a column from `LEFT JOIN LATERAL`;
-- a scalar subquery around a plain column, when it finds no row;
 - `CASE … THEN NULL`;
 - a later branch of a `UNION` that adds nulls to a non-function column;
 - a cast of a nullable expression (`max(x)::numeric`). A cast is not a way to assert never null. Don't cast a nullable expression.
@@ -1053,7 +1051,7 @@ Each line is one unit test for the generator. The input is a recorded or hand-bu
 
 ## Appendix A: what sqlc sends
 
-Observed with sqlc v1.31.1 and the database analyzer, for the forms the generator must accept.
+Observed with sqlc v1.31.1-sequel.1 and the database analyzer, for the forms the generator must accept.
 
 **Where types come from.** sqlc analyses each query twice and merges the results.
 - **Static analysis** of the schema dump gives column names and `not_null`, and a type for table columns and casts.
@@ -1200,7 +1198,7 @@ Every other array comes back as its text. Observed examples:
 
 ## Appendix C: nullability as sqlc reports it
 
-`not_null` and `is_func_call` as sqlc v1.31.1 reports them with the database analyzer, for the shapes that matter, and what the generator makes of them (R59–R65). "Limit" marks a case the generator doesn't correct, where the type can lie (R66).
+`not_null` and `is_func_call` as sqlc v1.31.1-sequel.1 reports them with the database analyzer, for the shapes that matter, and what the generator makes of them (R59–R65). "Limit" marks a case the generator doesn't correct, where the type can lie (R66).
 
 | Expression | `not_null` | `is_func_call` | Generated |
 |---|---|---|---|
@@ -1210,7 +1208,8 @@ Every other array comes back as its text. Observed examples:
 | `NOT NULL` column of the preserved side of `RIGHT JOIN` | true | false | never null |
 | column from a CTE, a subquery in `FROM`, or `RETURNING` | the source column's | false | as sqlc reports |
 | column through `LEFT JOIN` to a CTE | false | false | can be null |
-| column from `LEFT JOIN LATERAL (…) ON true` | the source column's (true) | false | never null. **Limit** |
+| column of an outer-joined subquery, `LEFT JOIN (SELECT …) s` | false | false | can be null |
+| column from `LEFT JOIN LATERAL (…) ON true` | false | false | can be null |
 | view column | as the view's definition gives | false | as sqlc reports |
 | `x IS NULL`, `x IS NOT NULL`, `NOT (x IS NULL)`, `(x IS NULL)` | false | false | never null (R63) |
 | `x IS DISTINCT FROM y`, `x IS NOT DISTINCT FROM y` | true | false | never null |
@@ -1239,7 +1238,8 @@ Every other array comes back as its text. Observed examples:
 | `CASE … THEN NULL ELSE …` | true | false | never null. **Limit** |
 | `CASE` without `ELSE` | false | false | can be null |
 | scalar subquery around a function, `(SELECT max(x) …)` | true | true | can be null (R61) |
-| scalar subquery around a `NOT NULL` column | true | false | never null. **Limit** when it finds no row |
+| scalar subquery around a `NOT NULL` column | false | false | can be null |
+| scalar subquery around a cast of `count`, `(SELECT count(*)::int …)` | true | false | never null |
 | scalar subquery around a nullable column | false | false | can be null |
 | `SELECT … UNION SELECT NULL` | the first branch's | as the first branch | function: can be null (R60). Otherwise as sqlc reports. **Limit** |
 | literal `'a'`, `1`, `true` | true | false | never null |

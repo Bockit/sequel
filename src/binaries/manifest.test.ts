@@ -45,7 +45,7 @@ describe('binaries.json', () => {
   it('parses, and pins every tool for every supported platform', () => {
     const pins = loadManifest()
     assert.deepEqual(Object.keys(pins.tools).sort(), ['schema-engine', 'sqlc', 'squawk'])
-    assert.equal(pins.tools.sqlc?.version, '1.31.1')
+    assert.equal(pins.tools.sqlc?.version, '1.31.1-sequel.1')
     assert.equal(pins.tools.squawk?.version, '2.71.0')
     assert.equal(
       pins.tools['schema-engine']?.version,
