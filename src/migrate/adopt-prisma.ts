@@ -4,7 +4,7 @@ import { readdir, rename, rm, rmdir } from 'node:fs/promises'
 import path from 'node:path'
 import { databaseName, withClient } from '../db/connection.ts'
 import { SequelError } from '../errors.ts'
-import { compare, type Migration } from './files.ts'
+import { compare, findMigrations, NAME, PRISMA_FOLDER, timestamp, type Migration } from './files.ts'
 import {
   acquireLock,
   createHistoryTable,
@@ -12,27 +12,107 @@ import {
   recordMigration,
   releaseLock,
 } from './history.ts'
+import { planPrismaHistory, type HistoryPlan, type PrismaRow } from './prisma-history.ts'
 
-const PRISMA_FOLDER = /^\d{14}_[a-z0-9_]+$/
 export const PRISMA_LOCK_FILE = 'migration_lock.toml'
 
 export type FileAdoption = { renamed: { from: string; to: string }[]; lockRemoved: boolean }
 
+export type HistoryAdoption =
+  | { status: 'adopted'; rows: number; matchedByChecksum: HistoryPlan['matchedByChecksum'] }
+  | { status: 'already-adopted' }
+  | { status: 'no-prisma-history' }
+
+export type PrismaAdoption = { files: FileAdoption; history: HistoryAdoption }
+
+// The file moves, planned and checked, with nothing changed yet.
+export type FilePlan = {
+  moves: { from: string; to: string }[]
+  lockFile: string | null
+  // A `migration.sql` in a folder not named `<YYYYMMDDHHMMSS>_<name>`.
+  misnamed: { shown: string; folderName: string }[]
+  clashes: string[]
+}
+
+// TECH-SPEC §8, `migrate adopt-prisma`: both parts are checked, under the runner's lock, before
+// either changes anything, so a refusal renames no file and writes no history. Then the files
+// are renamed, and the history is written in one transaction that also creates
+// `sequel_migrations`. `_prisma_migrations` is only read.
+export async function adoptPrisma(options: {
+  folder: string
+  root: string
+  url: string
+  lockWaitMs?: number
+}): Promise<PrismaAdoption> {
+  const plan = await planPrismaFiles(options.folder, options.root)
+  const filesOk = plan.misnamed.length === 0 && plan.clashes.length === 0
+  // The migrations as they will be named, which also checks every other file in the folder.
+  const migrations: Migration[] = filesOk
+    ? await findMigrations(options.folder, { root: options.root, prismaLayout: true })
+    : []
+  const database = databaseName(options.url)
+  return withClient(options.url, async (client) => {
+    client.on('error', () => {})
+    await acquireLock(client, database, options.lockWaitMs)
+    try {
+      const state = await historyState(client, database)
+      const toAdopt = state.hasPrismaHistory && !state.hasHistory
+      const rows = toAdopt
+        ? (
+            await client.query<PrismaRow>(
+              `SELECT migration_name, checksum, finished_at, rolled_back_at
+               FROM _prisma_migrations ORDER BY migration_name COLLATE "C", started_at`,
+            )
+          ).rows
+        : []
+      if (!filesOk) throw new SequelError(filesRefusal(plan, rows, database))
+      const history = toAdopt ? planPrismaHistory(database, rows, migrations) : undefined
+
+      const files = await applyPrismaFiles(plan)
+      if (history === undefined) {
+        return {
+          files,
+          history: { status: state.hasHistory ? 'already-adopted' : 'no-prisma-history' },
+        }
+      }
+      await client.query('BEGIN')
+      try {
+        await createHistoryTable(client)
+        for (const record of history.records) {
+          await recordMigration(client, record.identity, record.sha256, record.appliedAt)
+        }
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw error
+      }
+      return {
+        files,
+        history: {
+          status: 'adopted',
+          rows: history.records.length,
+          matchedByChecksum: history.matchedByChecksum,
+        },
+      }
+    } finally {
+      await releaseLock(client).catch(() => {})
+    }
+  })
+}
+
 // TECH-SPEC §8, the files: each `<ts>_<name>/migration.sql` becomes `<ts>_<name>.sql` in the
-// same parent folder, with its contents untouched, and Prisma's lock file goes. Every move is
-// checked before any is made.
-export async function adoptPrismaFiles(folder: string, root: string): Promise<FileAdoption> {
+// same parent folder, with its contents untouched, and Prisma's lock file goes. Plans the moves
+// and finds every problem, changing nothing.
+export async function planPrismaFiles(folder: string, root: string): Promise<FilePlan> {
+  const plan: FilePlan = { moves: [], lockFile: null, misnamed: [], clashes: [] }
   let entries: Dirent[]
   try {
     entries = await readdir(folder, { recursive: true, withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      return { renamed: [], lockRemoved: false }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return plan
     throw error
   }
   const shown = (file: string) => path.relative(root, file)
-  const moves: { from: string; to: string }[] = []
-  const problems: string[] = []
   const targets = new Set<string>()
   for (const entry of entries) {
     if (!entry.isFile() || entry.name !== 'migration.sql') continue
@@ -40,115 +120,52 @@ export async function adoptPrismaFiles(folder: string, root: string): Promise<Fi
     const dir = entry.parentPath
     const name = path.basename(dir)
     if (!PRISMA_FOLDER.test(name)) {
-      problems.push(
-        `${shown(from)} is in a folder not named \`<YYYYMMDDHHMMSS>_<name>\`, with a lower-case name, so it has no migration identity. Rename the folder to Prisma's form, then run this again.`,
-      )
+      plan.misnamed.push({ shown: shown(from), folderName: name })
       continue
     }
     const to = path.join(path.dirname(dir), `${name}.sql`)
     if (existsSync(to) || targets.has(to)) {
-      problems.push(`${shown(from)} would become ${shown(to)}, which already exists. Remove one.`)
+      plan.clashes.push(
+        `${shown(from)} would become ${shown(to)}, which already exists. Remove one.`,
+      )
       continue
     }
     targets.add(to)
-    moves.push({ from, to })
+    plan.moves.push({ from, to })
   }
-  if (problems.length > 0) {
-    throw new SequelError(
-      `Refusing to rename Prisma's migrations, so nothing changed:\n${problems.join('\n')}`,
-    )
-  }
+  plan.moves.sort((a, b) => compare(a.from, b.from))
+  plan.misnamed.sort((a, b) => compare(a.shown, b.shown))
+  const lock = path.join(folder, PRISMA_LOCK_FILE)
+  if (existsSync(lock)) plan.lockFile = lock
+  return plan
+}
 
-  moves.sort((a, b) => compare(a.from, b.from))
-  for (const move of moves) {
+export async function applyPrismaFiles(plan: FilePlan): Promise<FileAdoption> {
+  for (const move of plan.moves) {
     await rename(move.from, move.to)
     // Prisma's folder held only the file; anything else stays, with its folder.
     await rmdir(path.dirname(move.from)).catch(() => {})
   }
-  const lock = path.join(folder, PRISMA_LOCK_FILE)
-  const lockRemoved = existsSync(lock)
-  if (lockRemoved) await rm(lock)
-  return { renamed: moves, lockRemoved }
+  if (plan.lockFile !== null) await rm(plan.lockFile)
+  return { renamed: plan.moves, lockRemoved: plan.lockFile !== null }
 }
 
-export type HistoryAdoption =
-  | { status: 'adopted'; rows: number }
-  | { status: 'already-adopted' }
-  | { status: 'no-prisma-history' }
-
-type PrismaRow = {
-  migration_name: string
-  checksum: string
-  finished_at: Date | null
-  rolled_back_at: Date | null
-}
-
-// TECH-SPEC §8, the history: under the runner's lock, in one transaction that also creates
-// `sequel_migrations`, copy every applied Prisma row once its checksum matches its file.
-// `_prisma_migrations` is only read.
-export async function adoptPrismaHistory(options: {
-  url: string
-  migrations: Migration[]
-  lockWaitMs?: number
-}): Promise<HistoryAdoption> {
-  const database = databaseName(options.url)
-  return withClient(options.url, async (client) => {
-    client.on('error', () => {})
-    await acquireLock(client, database, options.lockWaitMs)
-    try {
-      const state = await historyState(client, database)
-      if (state.hasHistory) return { status: 'already-adopted' }
-      if (!state.hasPrismaHistory) return { status: 'no-prisma-history' }
-
-      const { rows } = await client.query<PrismaRow>(
-        `SELECT migration_name, checksum, finished_at, rolled_back_at
-         FROM _prisma_migrations ORDER BY migration_name COLLATE "C", started_at`,
-      )
-      const files = new Map(options.migrations.map((m) => [m.identity, m]))
-      const problems: string[] = []
-      const adopted = new Map<string, PrismaRow>()
-      for (const row of rows) {
-        const name = row.migration_name
-        if (row.rolled_back_at !== null) continue
-        if (row.finished_at === null) {
-          problems.push(
-            `\`${name}\` was started by Prisma but never finished, and never rolled back: a Prisma deploy failed. Resolve it with Prisma first (\`prisma migrate resolve --applied\` or \`--rolled-back\`), then run this again.`,
-          )
-          continue
-        }
-        if (adopted.has(name)) continue
-        const file = files.get(name)
-        if (file === undefined) {
-          problems.push(
-            `\`${name}\` is applied, but no migration file has that name. Restore it from version control.`,
-          )
-        } else if (file.sha256 !== row.checksum) {
-          problems.push(
-            `${file.shown} has changed since Prisma applied it (sha256 ${row.checksum} then, ${file.sha256} now). Restore the file from version control.`,
-          )
-        }
-        adopted.set(name, row)
-      }
-      if (problems.length > 0) {
-        throw new SequelError(
-          `Refusing to adopt the Prisma history of ${database}, so nothing changed:\n${problems.map((p) => `  - ${p}`).join('\n')}`,
-        )
-      }
-
-      await client.query('BEGIN')
-      try {
-        await createHistoryTable(client)
-        for (const row of adopted.values()) {
-          await recordMigration(client, row.migration_name, row.checksum, row.finished_at as Date)
-        }
-        await client.query('COMMIT')
-      } catch (error) {
-        await client.query('ROLLBACK').catch(() => {})
-        throw error
-      }
-      return { status: 'adopted', rows: adopted.size }
-    } finally {
-      await releaseLock(client).catch(() => {})
-    }
+// A misnamed folder's advice suggests the time Prisma applied the row with its name, to the
+// second, when the database has one.
+function filesRefusal(plan: FilePlan, rows: PrismaRow[], database: string): string {
+  const applied = new Map<string, Date>()
+  for (const row of rows) {
+    if (row.rolled_back_at === null && row.finished_at !== null && !applied.has(row.migration_name))
+      applied.set(row.migration_name, row.finished_at)
+  }
+  const problems = plan.misnamed.map(({ shown, folderName }) => {
+    const name = folderName.replace(/^\d+_/, '')
+    const appliedAt = applied.get(folderName)
+    const advice =
+      appliedAt !== undefined && NAME.test(name)
+        ? `Rename the folder with a timestamp that sorts it where Prisma applied it, such as \`${timestamp(appliedAt)}_${name}\`, the time Prisma applied it to ${database}.`
+        : 'Rename the folder to `<YYYYMMDDHHMMSS>_<name>`, with a timestamp that sorts it where Prisma applied it, such as the time in `_prisma_migrations.finished_at`.'
+    return `${shown} is in a folder not named \`<YYYYMMDDHHMMSS>_<name>\`, with a lower-case name, so it has no migration identity. ${advice} Then run this again.`
   })
+  return `Refusing to rename Prisma's migrations, so nothing changed:\n${[...problems, ...plan.clashes].join('\n')}`
 }

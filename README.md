@@ -198,7 +198,7 @@ Move queries first, and decide about migrations last. Prisma keeps the schema, t
 
 1. Split `schema.prisma` into a folder, and remove `url` from the `datasource` block.
 2. In `sequel.config.ts`, remove `externalMigrations`, and set `schema`, `migrations`, `snapshot` and the target database. Set the lint cut-over to your newest existing migration.
-3. Run `sequel migrate adopt-prisma` and commit the renamed files. Their contents don't change, so their checksums still match.
+3. Run `sequel migrate adopt-prisma` and commit the renamed files. Their contents don't change, so their checksums still match. A folder not named `<timestamp>_<name>`, such as the `0_init` of Prisma's baselining guide, is refused until you rename it. The message suggests the time Prisma applied it, so the names sort in the order Prisma applied them, and it checks that they do. The renamed folder's history row is matched to its file by checksum. Every check runs before anything changes, so a refusal renames nothing.
 4. Run `sequel migrate adopt-prisma` once against every database: production, each developer's, and the test database. It creates sequel's history from `_prisma_migrations`, checking every checksum, and leaves that table untouched. Until then, `deploy` refuses that database.
 5. Run `sequel extras`, and commit the snapshot.
 6. Remove `prisma` and its install hooks.

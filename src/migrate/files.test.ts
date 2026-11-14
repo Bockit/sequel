@@ -92,4 +92,36 @@ describe('migration discovery', () => {
       return true
     })
   })
+
+  it("with prismaLayout, reads Prisma's folders as the migrations they will become", async () => {
+    await put('20260101000000_a.sql')
+    await put('20260102000000_b/migration.sql', 'SELECT 2;\n')
+    await put('nested/20260103000000_c/migration.sql')
+    const found = await findMigrations(folder, { root, prismaLayout: true })
+    assert.deepEqual(
+      found.map((m) => [m.identity, m.shown]),
+      [
+        ['20260101000000_a', 'prisma/migrations/20260101000000_a.sql'],
+        ['20260102000000_b', 'prisma/migrations/20260102000000_b/migration.sql'],
+        ['20260103000000_c', 'prisma/migrations/nested/20260103000000_c/migration.sql'],
+      ],
+    )
+    assert.equal(found[1]?.sha256, sha256('SELECT 2;\n'))
+  })
+
+  it('with prismaLayout, still refuses a misnamed Prisma folder, and a clash is a duplicate', async () => {
+    await put('0_init/migration.sql')
+    await put('20260102000000_b.sql')
+    await put('nested/20260102000000_b/migration.sql')
+    await assert.rejects(findMigrations(folder, { root, prismaLayout: true }), (error: Error) => {
+      assert.equal(
+        error.message,
+        [
+          "prisma/migrations/0_init/migration.sql is in Prisma's layout. Run `sequel migrate adopt-prisma` to rename Prisma's migrations to `<timestamp>_<name>.sql` files.",
+          'prisma/migrations/20260102000000_b.sql and prisma/migrations/nested/20260102000000_b/migration.sql are the same migration, `20260102000000_b`. Delete one, or rename it with a new timestamp.',
+        ].join('\n'),
+      )
+      return true
+    })
+  })
 })

@@ -14,7 +14,7 @@ import { generateModules } from './generate/generate-modules.ts'
 import { findQueryFolders } from './generate/modules.ts'
 import { watchAndRerun } from './generate/watch.ts'
 import { databaseName } from './db/connection.ts'
-import { adoptPrismaFiles, adoptPrismaHistory, PRISMA_LOCK_FILE } from './migrate/adopt-prisma.ts'
+import { adoptPrisma, PRISMA_LOCK_FILE } from './migrate/adopt-prisma.ts'
 import { deployTo } from './migrate/deploy.ts'
 import { findMigrations, readMigrationFile } from './migrate/files.ts'
 import { lintFailureMessage, lintMigrations, migrationsToLint } from './migrate/lint.ts'
@@ -123,7 +123,11 @@ async function migrateLint(context: Context): Promise<void> {
 async function migrateAdoptPrisma(context: Context): Promise<void> {
   const config = await loadManaged(context)
   const url = requireDatabase(config, 'target')
-  const files = await adoptPrismaFiles(config.migrations, config.root)
+  const { files, history } = await adoptPrisma({
+    folder: config.migrations,
+    root: config.root,
+    url,
+  })
   for (const { from, to } of files.renamed) {
     out(`Renamed ${shown(config, from)} to ${shown(config, to)}`)
   }
@@ -136,10 +140,11 @@ async function migrateAdoptPrisma(context: Context): Promise<void> {
     out("Files: none in Prisma's layout, so nothing to rename.")
   }
 
-  const migrations = await findMigrations(config.migrations, { root: config.root })
-  const history = await adoptPrismaHistory({ url, migrations })
   const database = databaseName(url)
   if (history.status === 'adopted') {
+    for (const { name, identity } of history.matchedByChecksum) {
+      out(`History: matched Prisma's \`${name}\` to \`${identity}\` by its checksum.`)
+    }
     out(
       `History: created sequel_migrations on ${database} from ${plural(history.rows, 'applied Prisma migration')}. _prisma_migrations is left as it was.`,
     )

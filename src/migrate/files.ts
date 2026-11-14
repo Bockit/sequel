@@ -19,6 +19,8 @@ export type Migration = {
 
 export const MIGRATION_FILE = /^(\d{14})_([a-z0-9_]+)\.sql$/
 export const NAME = /^[a-z0-9_]+$/
+// A Prisma migration folder, `<YYYYMMDDHHMMSS>_<name>`, holding a `migration.sql`.
+export const PRISMA_FOLDER = /^\d{14}_[a-z0-9_]+$/
 
 // `<YYYYMMDDHHMMSS>_<name>`, with the time in UTC.
 export function migrationIdentity(now: Date, name: string): string {
@@ -27,8 +29,12 @@ export function migrationIdentity(now: Date, name: string): string {
       `The migration name \`${name}\` must be lower-case letters, digits and underscores, such as \`add_accounts\`.`,
     )
   }
-  const stamp = now.toISOString().replace(/[-:T]/g, '').slice(0, 14)
-  return `${stamp}_${name}`
+  return `${timestamp(now)}_${name}`
+}
+
+// `YYYYMMDDHHMMSS` in UTC, to the second.
+export function timestamp(time: Date): string {
+  return time.toISOString().replace(/[-:T]/g, '').slice(0, 14)
 }
 
 export function sha256(bytes: Buffer | string): string {
@@ -37,9 +43,11 @@ export function sha256(bytes: Buffer | string): string {
 
 // TECH-SPEC §8: every `.sql` file under the folder, at any depth, ordered by identity. The path
 // plays no part in order or identity. A missing folder holds no migrations.
+// With `prismaLayout`, for `migrate adopt-prisma`, a `<ts>_<name>/migration.sql` is read as the
+// migration `<ts>_<name>`, the identity it will have once renamed.
 export async function findMigrations(
   folder: string,
-  options: { root?: string } = {},
+  options: { root?: string; prismaLayout?: boolean } = {},
 ): Promise<Migration[]> {
   const root = options.root ?? process.cwd()
   const shown = (file: string) => path.relative(root, file)
@@ -48,7 +56,11 @@ export async function findMigrations(
   const byIdentity = new Map<string, Migration>()
 
   for (const file of files) {
-    const base = path.basename(file)
+    let base = path.basename(file)
+    if (base === 'migration.sql' && options.prismaLayout) {
+      const prismaFolder = path.basename(path.dirname(file))
+      if (PRISMA_FOLDER.test(prismaFolder)) base = `${prismaFolder}.sql`
+    }
     if (base === 'migration.sql') {
       problems.push(
         `${shown(file)} is in Prisma's layout. Run \`sequel migrate adopt-prisma\` to rename Prisma's migrations to \`<timestamp>_<name>.sql\` files.`,
