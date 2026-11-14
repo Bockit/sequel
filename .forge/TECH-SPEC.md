@@ -236,6 +236,7 @@ scripts/         maintenance, such as mirroring binaries; not published
        - Every path is relative to the config's folder, because sqlc joins even an absolute path onto it.
     4. Run `sqlc generate`. `check` compares its output with the modules in place, byte for byte, rather than using `sqlc diff`, which exits 1 silently for a missing module and doesn't see orphans.
   - **The database analyzer is required.** sqlc's static analyzer types `IS NOT NULL`, `MAX`/`MIN` over timestamps and pgvector's `<=>` as `any`, and raises a false "ambiguous column" error on a CTE inside an `UPDATE`. The database analyzer gets all of these right.
+    - It also hides a failure of sqlc's own analysis instead of reporting it: the query generates, described by the database alone. The generator recognises that and corrects for it (§10).
   - **The plugin command is a wrapper.** sqlc runs the plugin with no `PATH`, so `src/generate/` writes a per-run `#!/bin/sh` wrapper that `exec`s `process.execPath` on the generator's entry. `PATH` isn't passed through sqlc's `env`.
   - **All or nothing:** sqlc writes each block's output as it goes, even when a later block fails, so every block writes into a temporary folder, and sequel moves modules into place only when every block generates.
   - **Orphans:** generated modules are recognised by their header line. One whose query file is gone is deleted.
@@ -258,8 +259,10 @@ scripts/         maintenance, such as mirroring binaries; not published
     - camelCase is computed from Postgres's column name. A name with no underscores is kept as it is.
     - Two columns that give the same key, or two parameters that do, are an error naming the query and its file.
   - **Parameters need names.** A parameter sqlc can't name is an error asking for `@name`, because the generated parameters object needs a key.
+  - **No unbound parameters.** A query whose text still holds `@name` or `sqlc.arg(…)`, which sqlc can leave in when it can't analyse the query, is an error. Postgres would read `@name` as its own `@` operator.
   - **Types:**
     - Nullability from sqlc's `not_null`, corrected by the generator for function calls and null tests, because sqlc reports most function calls as never null and `IS NOT NULL` as nullable. A small lexer over the query text supplies the corrections. When the select list doesn't line up with the columns, every function-call column is nullable.
+    - When sqlc's own analysis of a query fails, as on a subquery in `FROM` whose alias renames its columns, it falls back to the database's description, whose `not_null` ignores outer joins, and sends every column with `length` 0. The generator then takes a column as never null only where it proves it: a call that can't return null, or a `NOT NULL` column of a table in the depth-0 `FROM` that isn't on the nullable side of an outer join. `-- @notnull` asserts the rest.
     - `-- @notnull col` and `-- @notnull col[]` on a query assert what the generator can't prove. A cast is not an assertion.
     - Enums as string-literal unions, read from the request's catalog, for any schema.
     - Postgres type names in both spellings, bare and `pg_catalog.`-prefixed (`bool`/`boolean`, `float8`/`double precision`, `int4`/`integer` and the rest), mapped to what `pg`'s default parsers return.

@@ -37,7 +37,7 @@ Every statement here about sqlc's input or `pg`'s values was observed, not infer
 - **Postgres 18.6.**
 - **`pg` with `pg-types` 2.2.0**, the default type parsers, `rowMode: 'array'`. The repo pins `pg` 8.23.1. Appendix B was measured on 8.22, which uses the same `pg-types`, and its array and scalar results were spot-checked on 8.23.1. The type mapping (§12) describes these parsers. A change of `pg` major version means re-measuring Appendix B.
 
-The types describe what Postgres can return. The generator follows sqlc's `not_null` only where it is right, and corrects it for function calls and null tests (R59–R66). Appendix C records what sqlc reports and what the generator makes of it.
+The types describe what Postgres can return. The generator follows sqlc's `not_null` only where it is right, and corrects it for function calls and null tests, and where sqlc's own analysis failed (R59–R67). Appendix C records what sqlc reports and what the generator makes of it.
 
 ## 2. The process
 
@@ -187,9 +187,13 @@ Nothing else changes: underscores and the rest of the name are kept.
 - `@name`, `sqlc.arg(…)` and `sqlc.narg(…)` become `$n`;
 - `*` and `t.*` are expanded into the column list.
 
+sqlc makes those rewrites in its own analysis of the query. When that analysis fails, sqlc can send the query to the database analyzer as written, with neither rewrite made (Appendix A). R68 makes sure no module is written with a parameter left in.
+
 A statement with no `;` before the next `-- name:` merges with the next query, and sqlc reports a syntax error.
 
 **R24. What is sent.** The function sends, as `text`, the string `-- name: <name> <cmd>\n` followed by `Query.text` exactly. The leading comment identifies the query in Postgres logs and `pg_stat_statements`.
+
+**R68. Unbound parameters.** It is an error if `Query.text` still holds sqlc's parameter syntax: `@` followed by a name (sqlc reads any `@name` as a parameter, binary or prefix), or `sqlc.arg`, `sqlc.narg`, `sqlc.slice` or `sqlc.embed` followed by `(`, in any case. The lexer of R60 finds them, so strings, quoted identifiers and comments don't count, and nor do Postgres's own `<@`, `@>` and `@@`. Postgres would read a leftover `@name` as its `@` operator, and the query would fail at run time (`operator does not exist: @ text`), or worse, run as `@ name`, the absolute value of a column called `name`. Each leftover is reported once, as written.
 
 **R25. How it is written.** The text is emitted as a template literal whose cooked value equals the string in R24, character for character. Inside it:
 - `\` becomes `\\`;
@@ -482,7 +486,7 @@ sqlc's `not_null` is right for table columns and outer joins, and wrong for most
 
 **R59. Order.** For each column of a `:one` or `:many` query, in this order:
 1. start from `column.not_null`;
-2. if `column.is_func_call` is true, apply R61;
+2. if sqlc fell back to the database's description (R67), apply R67; otherwise, if `column.is_func_call` is true, apply R61;
 3. if the select list lines up (R60), apply R62 and R63;
 4. apply any `@notnull` (R65), which overrides everything before it.
 
@@ -536,6 +540,23 @@ To resolve `<col>`, read the depth-0 `FROM` clause as items `[schema.]table [[AS
 - `LEFT JOIN` puts the item it adds on the nullable side, `RIGHT JOIN` everything before it, and `FULL JOIN` both.
 
 If anything doesn't resolve, the elements stay `E | null`. The column itself still follows R61, so `array_agg(title)` on a `NOT NULL` column is `string[] | null`. A stored array column is always `(E | null)[]`.
+
+**R67. sqlc's fallback.** When sqlc's own analysis of a query fails, the database analyzer's description replaces its columns (Appendix A). That happens for a query sqlc's own analysis can't follow, such as one with a subquery in `FROM` whose alias renames its columns, `(SELECT …) AS s(a, b)`. Each column's `not_null` is then the table column's `NOT NULL`, outer joins or not, and nothing else is ever never null. `is_func_call` is false for every column.
+- **Detected** when every column of the query has `length` 0. sqlc's own analysis sends `-1` for a table column with no type modifier and the modifier for one with, never 0. The fallback sends 0 for every column.
+- **Then** a column is never null only if the select list lines up (R60) and its item is either:
+  - a never-null call by R61's shape and names, such as `count(*)`, whatever `is_func_call` says; or
+  - `name` or `alias.name` that resolves, as R64 resolves `<col>`, to a `NOT NULL` column of a table in the depth-0 `FROM` that isn't on the nullable side of an outer join.
+- Every other column can be null, including every column of `RETURNING`, of a subquery or of a `WITH` name, and every column when the list doesn't line up. R62, R63 and `@notnull` (R65) apply after, as usual.
+
+```sql
+-- name: OnCall :many
+SELECT s.id, c.on_call
+FROM station s
+LEFT JOIN (SELECT station_id, enabled FROM station_alert_config) AS c(station_id, on_call)
+  ON c.station_id = s.id;
+```
+
+sqlc reports both as never null. The generator types `id` as `number` and `on_call` as `boolean | null`: `c` is a subquery, so nothing proves its column. Without the column list on the alias, sqlc analyses the query itself, and reports `on_call` as nullable.
 
 **R65. `@notnull`.** A comment line on the query (in `Query.comments`) whose first word is `@notnull`, followed by one or more space-separated names, asserts what the generator can't prove:
 - `name` says the column is never null;
@@ -664,6 +685,7 @@ export async function n(client: Queryable, params: NParams): Promise<number> {
 | two parameters with one key | R31 | `parameters $<a> and $<b> both give the key <k>. Name them with @name.` |
 | `sqlc.slice` | R32 | `sqlc.slice is not supported for Postgres. Use = ANY(@name::type[]).` |
 | `sqlc.embed` | R39 | `sqlc.embed is not supported. List the columns instead.` |
+| parameter syntax left in the text | R68 | `sqlc left <@name or sqlc.arg(name)> unbound in the query text. sqlc could not analyse the query, so simplify it until sqlc can.` |
 | unnamed column | R40 | `column <i+1> has no name. Give it an alias.` |
 | two columns with one key | R40 | `columns <a> and <b> both give the key <k>. Alias one of them.` |
 | `__proto__` key | R43 | `the key __proto__ is not allowed. Alias it.` |
@@ -1038,6 +1060,8 @@ Each line is one unit test for the generator. The input is a recorded or hand-bu
 - `array_agg(note) FILTER (WHERE note IS NOT NULL)` and `FILTER (WHERE note IS NOT NULL AND x)` narrow the elements. `FILTER (WHERE other IS NOT NULL)` and `FILTER (WHERE note IS NOT NULL OR x)` don't (R64).
 - `array_agg(x)` from a subquery, a function, a `WITH` name, or with a bare `name` in two tables isn't narrowed (R64).
 - A stored `text[] NOT NULL` column is `(string | null)[]` (R48, R64).
+- With every column's `length` 0, `t.title` (`NOT NULL`, off the nullable side) and `count(*)` are never null; `p.name` from a `LEFT JOIN`, a bare `title` beside a subquery in `FROM`, a subquery's column, a `WITH` name's column, `upper(t.title)`, `t.id + 1` and a `RETURNING` column can be null, whatever `not_null` says. `coalesce(p.name, '')` and `p.id IS NULL` are never null, and `@notnull` overrides. With one column's `length` -1, sqlc's `not_null` stands (R67).
+- `@name`, `@"Name"`, `a @ b`, `sqlc.arg(x)`, `SQLC.NARG("X")` and `sqlc.arg('a' \|\| 'b')` left in the text are errors, each once. `'@a'`, `"@b"`, `$$@c$$`, comments, `<@`, `@>`, `@@`, `@ -1`, `$1`, `sqlc_arg(x)` and `sqlc.other(x)` aren't (R68).
 - `-- @notnull latest` makes `max(x) AS latest` not null. `-- @notnull titles[]` narrows the elements. Both on one line work. `@notnull` overriding a `LEFT JOIN` column works. The line doesn't appear in the JSDoc (R26, R65).
 - `@notnull` with no names, with an unknown name, and with `name[]` on a non-array are each an error (R65).
 
@@ -1056,6 +1080,7 @@ Observed with sqlc v1.31.1-sequel.1 and the database analyzer, for the forms the
 **Where types come from.** sqlc analyses each query twice and merges the results.
 - **Static analysis** of the schema dump gives column names and `not_null`, and a type for table columns and casts.
 - **The database analyzer** prepares the query on the test database and overrides the type, `is_array` and `array_dims`. It doesn't override nullability.
+- **When static analysis fails,** sqlc ignores the error. If the static column count isn't the analyzer's, as when static analysis found none, the analyzer's columns replace the static ones whole. Their `not_null` is the table column's `NOT NULL` (`attnotnull`), even through an outer join, and false for anything else. `is_func_call` is false, `length` is 0 rather than -1, `table.schema` is filled in, and the type is the analyzer's spelling. Parameters are replaced the same way when the counts differ, with `not_null` false. A subquery in `FROM` whose alias renames its columns, `(SELECT …) AS s(a, b)`, does this: sqlc's own analysis doesn't apply the alias's column names, so it can't find a column read through them. When the failure also stops sqlc expanding a `*`, it sends the query to the analyzer as written, with `@name` in it: the analyzer reports Postgres's error, or, when that prepares, sqlc reports "star expansion failed for query". R67 and R68 handle what reaches the generator.
 - **Which name wins:** when static analysis knew a type, its spelling is what arrives, even though the analyzer's type was used. Otherwise the analyzer's spelling arrives, which is Postgres's `format_type`, partly rewritten.
 
 | Source | Example `type` | Seen for |
@@ -1210,6 +1235,7 @@ Every other array comes back as its text. Observed examples:
 | column through `LEFT JOIN` to a CTE | false | false | can be null |
 | column of an outer-joined subquery, `LEFT JOIN (SELECT …) s` | false | false | can be null |
 | column from `LEFT JOIN LATERAL (…) ON true` | false | false | can be null |
+| any column, when sqlc's own analysis of the query failed (every `length` 0) | the table column's `NOT NULL`, even through an outer join; false for anything else | false | never null only if proved (R67) |
 | view column | as the view's definition gives | false | as sqlc reports |
 | `x IS NULL`, `x IS NOT NULL`, `NOT (x IS NULL)`, `(x IS NULL)` | false | false | never null (R63) |
 | `x IS DISTINCT FROM y`, `x IS NOT DISTINCT FROM y` | true | false | never null |

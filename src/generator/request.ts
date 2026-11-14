@@ -17,6 +17,9 @@ export type Column = {
   type: Identifier | null
   embed_table: Identifier | null
   array_dims: number
+  // sqlc's own analysis sends -1, or a length where its catalog has one. Its fallback to
+  // the database's description of the query sends 0 for every column (R67).
+  length: number
 }
 
 export type Parameter = {
@@ -131,6 +134,7 @@ function column(value: unknown): Column {
     type: identifier(item.type),
     embed_table: identifier(item.embed_table),
     array_dims: typeof item.array_dims === 'number' ? item.array_dims : 0,
+    length: typeof item.length === 'number' ? item.length : 0,
   }
 }
 

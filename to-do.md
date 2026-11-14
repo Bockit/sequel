@@ -7,7 +7,9 @@
 ## Watch upstream
 
 - **Prisma 7's end of life.** It is maintenance-only for 18 months after Prisma 8 goes generally available (no date yet; rc.33 as of 6 Nov 2026). After that, the schema language is frozen at the pin, and the mirrored builds keep working.
-- **sqlc's next release.** It brings a new pure-Go parser and analysis core. Decide whether to move the pin.
+- **sqlc's next release.** It brings a new pure-Go parser and analysis core. Our pin is a fork of v1.31.1 (TECH-SPEC §5), so moving the pin means moving the fork's six fixes onto the new release, less any that upstream has taken.
+  - Postgres still takes the legacy path by default, which ignores a failed static analysis, so R67's fallback still applies. Check that the fallback's signal (every column's `length` 0) still holds.
+  - The new core is opt-in (`SQLCEXPERIMENT=coreanalyzer`). As of 14 Nov 2026 it types every outer-joined column as never null, so sequel can't use it.
 - **sqlc #3710.** A cast is assumed never null. When it is fixed, revisit the no-cast convention in SPEC §5.
 
 ## Later, if needed

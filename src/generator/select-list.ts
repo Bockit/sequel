@@ -406,6 +406,16 @@ export function arrayAggElementsNotNull(
   return resolvesToNotNullColumn(aggregated, from, lookup)
 }
 
+// R67: whether an item is a column reference that resolves, as R64 resolves one, to a
+// `NOT NULL` column of a table that isn't on the nullable side of an outer join.
+export function isNotNullColumn(
+  item: Token[],
+  from: FromItem[] | null,
+  lookup: ColumnLookup,
+): boolean {
+  return resolvesToNotNullColumn(bare(item).tokens, from, lookup)
+}
+
 function resolvesToNotNullColumn(
   tokens: Token[],
   from: FromItem[] | null,

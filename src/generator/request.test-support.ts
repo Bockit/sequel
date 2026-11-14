@@ -14,6 +14,8 @@ export function column(name: string, spec: ColumnSpec = {}): Column {
     is_sqlc_slice: false,
     embed_table: null,
     array_dims: 0,
+    // What sqlc's own analysis sends. 0 would mean it fell back to the database (R67).
+    length: -1,
     ...rest,
     type: { catalog: '', schema, name: type },
   }

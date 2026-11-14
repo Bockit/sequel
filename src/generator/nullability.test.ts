@@ -334,3 +334,83 @@ describe('array_agg elements (R64)', () => {
     assert.equal(propertyType(text, 'QRow', 'tags'), '(string | null)[]')
   })
 })
+
+describe("sqlc's fallback to the database's description (R67)", () => {
+  // The one column of `SELECT <item> <from>`, as sqlc sends it after its own analysis failed:
+  // `length` 0, `is_func_call` false, and `not_null` from the table column, if any.
+  function describedNullable(item: string, from: string, notNull = true): boolean {
+    const [result] = correctNullability(
+      { text: `SELECT ${item} ${from}`, columns: [column('c', { not_null: notNull, length: 0 })] },
+      CATALOG,
+    )
+    return !(result as { notNull: boolean }).notNull
+  }
+
+  const RENAMED = 'JOIN (SELECT 1) AS x(one) ON true'
+  const JOINED = `FROM task t LEFT JOIN project p ON p.id = t.project_id ${RENAMED}`
+
+  it('makes a column from the nullable side of an outer join nullable', () => {
+    assert.equal(describedNullable('p.name', JOINED), true)
+    assert.equal(describedNullable('p.name AS project_name', JOINED), true)
+    assert.equal(describedNullable('t.id', `FROM project p RIGHT JOIN task t ON true`), false)
+    assert.equal(describedNullable('p.id', `FROM project p RIGHT JOIN task t ON true`), true)
+  })
+
+  it('keeps a NOT NULL column of a table off the nullable side never null', () => {
+    assert.equal(describedNullable('t.title', JOINED), false)
+    assert.equal(describedNullable('(t.title) AS title', JOINED), false)
+    assert.equal(describedNullable('title', 'FROM task'), false)
+  })
+
+  it("makes what it can't resolve nullable", () => {
+    for (const [item, from] of [
+      ['title', JOINED],
+      ['x.one', JOINED],
+      ['t.note', JOINED],
+      ['upper(t.title)', JOINED],
+      ['t.id + 1', JOINED],
+      ['c.id', 'FROM (SELECT id FROM task) c'],
+    ] as const) {
+      assert.equal(describedNullable(item, from), true, item)
+    }
+    assert.equal(describedNullable('w.id', 'FROM w', true), true)
+    const [returning] = correctNullability(
+      { text: 'UPDATE task SET title = 1 RETURNING id', columns: [column('id', { length: 0 })] },
+      CATALOG,
+    )
+    assert.equal(returning?.notNull, false)
+  })
+
+  it('still applies R61, R62 and R63', () => {
+    assert.equal(describedNullable('count(*)', JOINED, false), false)
+    assert.equal(describedNullable('max(t.id)', JOINED, false), true)
+    assert.equal(describedNullable(`coalesce(p.name, '')`, JOINED), false)
+    assert.equal(describedNullable('p.id IS NULL', JOINED, false), false)
+  })
+
+  it('applies only when every column has length 0', () => {
+    const columns = [column('id', { length: 0 }), column('name', { length: -1 })]
+    const result = correctNullability(
+      { text: 'SELECT t.id, p.name FROM task t LEFT JOIN project p ON true', columns },
+      CATALOG,
+    )
+    assert.deepEqual(
+      result.map((r) => r.notNull),
+      [true, true],
+    )
+  })
+
+  it('lets @notnull assert what it makes nullable', () => {
+    const text = moduleText([
+      query({
+        name: 'Q',
+        cmd: ':many',
+        text: `SELECT title, p.name ${JOINED}`,
+        comments: [' @notnull title'],
+        columns: [column('title', { length: 0 }), column('name', { length: 0 })],
+      }),
+    ])
+    assert.equal(propertyType(text, 'QRow', 'title'), 'string')
+    assert.equal(propertyType(text, 'QRow', 'name'), 'string | null')
+  })
+})

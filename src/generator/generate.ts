@@ -5,12 +5,14 @@ import {
   arrayAggElementsNotNull,
   coalesce,
   isNeverNullCall,
+  isNotNullColumn,
   isNullTest,
   selectList,
   type ColumnLookup,
 } from './select-list.ts'
 import { templateLiteral } from './strings.ts'
 import { isJson, needsParse, paramType, resolveType, rowType } from './types.ts'
+import { unboundParameters } from './unbound-parameters.ts'
 
 export type OutputFile = { name: string; contents: string }
 
@@ -207,6 +209,13 @@ function prepare(
     failures.push('returns no columns. Use :exec or :execrows.')
   }
 
+  // R68: a parameter sqlc didn't rewrite would reach Postgres as the operator `@`.
+  for (const written of unboundParameters(query.text)) {
+    failures.push(
+      `sqlc left ${written} unbound in the query text. sqlc could not analyse the query, so simplify it until sqlc can.`,
+    )
+  }
+
   const params = prepareParams(query, catalog, failures)
   const columns = prepareColumns(query, catalog, bigint, returnsRows, failures)
   const doc = jsdoc(query.comments)
@@ -364,18 +373,23 @@ function notNullAssertions(
   return ok ? { columns, elements } : null
 }
 
-// R59–R64: sqlc's `not_null`, corrected for function calls, coalesce, null tests and the
-// elements of array_agg.
+// R59–R64 and R67: sqlc's `not_null`, corrected for function calls, coalesce, null tests,
+// the elements of array_agg, and sqlc's fallback to the database's description.
 export function correctNullability(
   query: Pick<Query, 'text' | 'columns'>,
   catalog: Catalog | null,
 ): { notNull: boolean; elementsNotNull: boolean }[] {
   const { items, from } = selectList(query.text, query.columns.length)
   const lookup = columnLookup(catalog)
+  const described = describedOnly(query.columns)
   return query.columns.map((column: Column, i) => {
     let notNull = column.not_null
     const item = items?.[i]
-    if (column.is_func_call) notNull = item !== undefined && isNeverNullCall(item)
+    if (described) {
+      notNull = item !== undefined && (isNeverNullCall(item) || isNotNullColumn(item, from, lookup))
+    } else if (column.is_func_call) {
+      notNull = item !== undefined && isNeverNullCall(item)
+    }
     let elementsNotNull = false
     if (item !== undefined) {
       const coalesced = coalesce(item)
@@ -385,6 +399,12 @@ export function correctNullability(
     }
     return { notNull, elementsNotNull }
   })
+}
+
+// R67: sqlc's own analysis of the query failed, and every column is the database's
+// description of it, whose `not_null` is the table column's, outer joins or not.
+function describedOnly(columns: Column[]): boolean {
+  return columns.length > 0 && columns.every((column) => column.length === 0)
 }
 
 function columnLookup(catalog: Catalog | null): ColumnLookup {
@@ -411,6 +431,7 @@ function emptyColumn(): Column {
     type: null,
     embed_table: null,
     array_dims: 0,
+    length: -1,
   }
 }
 
