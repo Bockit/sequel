@@ -143,10 +143,14 @@ With external migrations (§2), `check` needs only the test database. `validate`
 ### `sequel migrate adopt-prisma`
   - Moves an app from Prisma's migrations to sequel's. It does whichever of its two parts is still needed, so running it again changes nothing.
   - **Files:** renames each `<timestamp>_<name>/migration.sql` to `<timestamp>_<name>.sql` and removes Prisma's lock file. Contents are untouched, so their checksums still match the history. The result is committed once per app.
+    - A folder not named `<timestamp>_<name>`, such as the `0_init` of Prisma's baselining guide, is refused. The author renames it with a timestamp that sorts it where Prisma applied it, and the message suggests the time Prisma applied it.
   - **History:** on the target database, creates sequel's migration history from Prisma's.
-    - Each applied Prisma row becomes a sequel row once its checksum matches its file.
-    - Refuses, changing nothing, if a Prisma migration failed and was never resolved, or if an applied row's file is missing or changed.
+    - Each applied Prisma row becomes a sequel row, under its file's name, once its checksum matches its file.
+    - A row is matched to the file with its name. A row whose name no file has, because its folder was renamed, is matched to the one file with the same checksum that no other Prisma row names.
+    - Refuses if a Prisma migration failed and was never resolved, or if an applied row's file is missing, changed, or can't be told apart from another by its checksum.
+    - Refuses if the files' names don't sort in the order Prisma applied them, because a new database replays them in name order. The message names both files and suggests renaming one to the time Prisma applied it.
     - The Prisma table is left as it was.
+  - Checks both parts before changing either, so a refusal renames no file and writes no history.
   - Run once against every database the app has: production, each developer's, and the test database.
 
 ### `sequel migrate deploy [--allow-out-of-order]`

@@ -135,7 +135,7 @@ scripts/         maintenance, such as mirroring binaries; not published
 ### Files
   - Each migration is a file `<YYYYMMDDHHMMSS>_<name>.sql`, with the time in UTC and the name matching `[a-z0-9_]+`, anywhere under the migrations folder.
     - Found by a recursive walk; the path plays no part in order or identity.
-    - Identity is the file name without `.sql`, which is what Prisma's `migration_name` already holds for `<ts>_<name>/migration.sql`, so adopted rows match renamed files with no mapping.
+    - Identity is the file name without `.sql`, which is what Prisma's `migration_name` already holds for `<ts>_<name>/migration.sql`, so adopted rows match renamed files by name. A row whose folder was renamed before adoption is matched by checksum instead (`migrate adopt-prisma`).
     - Ordered by identity, so by timestamp, then name.
     - A `.sql` file under the folder whose name doesn't match, or a duplicate identity, is an error. A leftover `migration.sql` is an error that names `migrate adopt-prisma`.
   - `migrate new` writes at the top of the migrations folder.
@@ -198,11 +198,15 @@ scripts/         maintenance, such as mirroring binaries; not published
 
 ### `migrate adopt-prisma`
   - **Files:** each `<ts>_<name>/migration.sql` becomes `<ts>_<name>.sql` in the same parent folder, and `migration_lock.toml` is deleted. Skipped when no Prisma-layout file remains.
+    - A `migration.sql` whose folder isn't named `<YYYYMMDDHHMMSS>_<name>` is refused. When `_prisma_migrations` has an applied row with the folder's name, the message suggests `<its finished_at in UTC, to the second>_<name>`.
   - **History,** skipped when `sequel_migrations` already exists:
     - Under the runner's advisory lock, in one transaction that also creates `sequel_migrations`.
-    - Copies every Prisma row that has `finished_at` set and `rolled_back_at` null, after checking its checksum against its file.
-    - Refuses if any row was started, never finished, and never rolled back (a failed Prisma deploy has to be resolved first), or if an applied row's file is missing or changed.
+    - Copies every Prisma row that has `finished_at` set and `rolled_back_at` null, after checking its checksum against its file. The sequel row takes the file's identity.
+    - **Matching:** a row matches the file whose identity is its `migration_name`. A row with no such file matches by checksum, to the one file with its sha256 whose identity no `_prisma_migrations` row names. No such file, more than one, or one file claimed by two rows is a refusal naming the row and the files.
+    - **Order:** the adopted files, in identity order, must be in the order Prisma applied them, by `finished_at`. Rows with equal times impose no order. The runner replays files in identity order, so a file that sorts ahead of one Prisma applied before it would run before what it depends on in every new database. The refusal names both files and their times, and suggests renaming one to the time Prisma applied it, to the second (`<finished_at in UTC>_<name>`), when that rename would fix the pair.
+    - Refuses if any row was started, never finished, and never rolled back (a failed Prisma deploy has to be resolved first), if an applied row's file is missing, changed or ambiguous, or if the order differs.
     - `_prisma_migrations` is never written to or dropped.
+  - **Check, then change:** the file moves are planned, and the history checked under the lock, before any file is renamed or any row written. The files are renamed, then the history is written in its transaction. Every refusal comes from the checks, so it changes nothing.
   - Explicit, never done by `deploy`, so moving a production database off Prisma is a step someone chooses to take.
 
 ### Drift
@@ -311,7 +315,7 @@ scripts/         maintenance, such as mirroring binaries; not published
     - the manifest's lockstep.
   - **Integration tests** need Postgres 18 (the server named by `SEQUEL_TEST_DATABASE_URL`) and the fetched binaries. Each test creates and drops its own `sequel_test_*` databases. They cover:
     - the runner: per-file transactions; an enum added in one file and used in the next; a failed file leaving nothing; no-transaction files; a changed file refused; out-of-order and missing files; concurrent deploys serialising;
-    - `migrate adopt-prisma`: the file renames, history adoption, a failed Prisma row, a changed file, and a second run changing nothing;
+    - `migrate adopt-prisma`: the file renames, history adoption, a failed Prisma row, a changed file, and a second run changing nothing; a baseline folder (`0_init`) refused, then adopted by checksum once renamed; an ambiguous checksum; files whose order differs from Prisma's; and a refusal that renames nothing;
     - migration discovery: nested folders, a misnamed file, a duplicate identity, a leftover `migration.sql`;
     - the engine client;
     - `generate` and `check`, end to end;
@@ -346,6 +350,7 @@ scripts/         maintenance, such as mirroring binaries; not published
     - Anything unexpected prints its stack.
   - **Environment variables** use the `SEQUEL_` prefix.
   - **Output:** deterministic, from generated code to snapshots and messages, so reruns produce no diff.
+  - **Releases:** every release has an entry in `CHANGELOG.md` at the repo root, under its version, saying what changed for an app using sequel and anything an app must do to upgrade. The entry is in the same commit as the version bump.
 
 ## 15. Decisions and Rejected Alternatives
 
